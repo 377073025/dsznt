@@ -1,0 +1,28 @@
+# 各平台入口、域名白名单、风控关键词与限速（07 号文档 6.3、6.5 节）
+# 入口地址在 POC 阶段确认后填写；脚本里只引用 urls.<key>
+
+pdd_backend:
+  domains: [mms.pinduoduo.com]
+  urls: {}
+  rate_limit: {min_interval_s: 30, daily_pages: 200}
+  window: ["06:00", "08:00"]
+
+pdd_front:
+  domains: [mobile.yangkeduo.com]
+  urls: {}
+  rate_limit: {min_interval_s: 60, daily_pages: 20}
+  window: ["08:00", "23:00"]
+
+alibaba:
+  domains: [1688.com, s.1688.com, detail.1688.com]
+  urls: {}
+  rate_limit: {min_interval_s: 60, max_interval_s: 180, daily_pages: 60}
+  window: ["08:00", "23:00"]
+
+# 页面文本或 URL 出现这些词 → 风控
+risk_keywords:
+  captcha: [验证码, 滑块, 拖动滑块, 安全验证, 人机验证]
+  blocked: [访问受限, 账号异常, 操作频繁, 安全检测, 请稍后再试]
+
+# 网页读取层禁止点击的元素（名称或附近文本命中即拒绝）
+forbidden_click_words: [提交, 保存, 发布, 删除, 确认修改, 上架, 下架, 付款, 支付, 下单, 购买, 确认收货]

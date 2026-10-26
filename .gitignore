@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 运行数据与本地密钥（凭证只放 Windows 凭据管理器）
+code/backend/data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+
+# 系统文件
+.DS_Store
+Thumbs.db

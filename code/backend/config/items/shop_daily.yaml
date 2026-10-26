@@ -1,0 +1,29 @@
+# 本店每日数据项（07 号文档 6.1 节）。channels 按顺序尝试，跳过能力未 healthy 的。
+# call：<服务命名空间>.<方法>，由 app/services.py 按通道类型提供实现
+
+- item: goods_snapshot
+  schema: GoodsInfo
+  required_fields: [goods_id, title, price_fen, main_image_hash]
+  deadline_minutes: 90
+  channels:
+    - {type: api, capability: pdd_api, call: pdd.list_goods}
+    - {type: web, capability: pdd_web, call: pdd.list_goods, script: pdd_backend.goods_list}
+    - {type: manual, template: 拼多多后台-商品列表-导出.xlsx, guide: guides/pdd_goods_list_export.md}
+
+- item: goods_daily_traffic
+  schema: GoodsTraffic
+  required_fields: [goods_id, day, visitors, add_to_cart, orders]
+  deadline_minutes: 90
+  channels:
+    # 单款访客、加购没有开放接口，只能网页读取或人工导入
+    - {type: web, capability: pdd_web, call: pdd.goods_daily_traffic, script: pdd_backend.goods_traffic_daily}
+    - {type: manual, template: 拼多多后台-商品数据-导出.xlsx, guide: guides/pdd_goods_traffic_export.md}
+
+- item: order_stats
+  schema: OrderStats
+  required_fields: [day, orders, gmv_fen]
+  deadline_minutes: 90
+  channels:
+    - {type: api, capability: pdd_api, call: pdd.order_stats}
+    - {type: web, capability: pdd_web, call: pdd.order_stats, script: pdd_backend.order_stats}
+    - {type: manual, template: 拼多多后台-交易数据-导出.xlsx, guide: guides/pdd_order_export.md}

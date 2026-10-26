@@ -1,0 +1,41 @@
+# 选品与诊断规则（04 号文档 3.4–3.5 节）。店主经 Web「规则配置」修改，每次修改留版本。
+
+selection:
+  hard_filters:
+    require_dropship: true
+    min_margin: 0.25
+    min_profit_per_unit: 3.0
+    min_ship_48h_rate: 0.95
+    max_return_rate_vs_category: 1.0     # 退货率 ≤ 类目均值 × 该系数
+    banned_categories: [食品, 保健品, 化妆品, 医疗器械, 母婴奶粉, 3C数码, 成人用品, 药品]
+    max_weight_kg: 3.0
+    max_longest_side_cm: 60
+    min_supplier_years: 2
+    min_stock: 200
+  score_weights:          # 合计 100
+    profit: 25
+    demand: 20
+    competition: 10
+    supplier: 15
+    dropship_auto: 15
+    fit: 10
+    assets: 5
+  candidate_min_score: 70
+  weekly_max_recommend: 5
+  profit:
+    platform_fee_rate: 0.006
+    promotion_rate: 0.10
+    after_sales_loss_rate: 0.03
+    tool_fee_per_order: 0.2
+  test_run:
+    days: 14
+    keep_min_visitors: 300
+    keep_min_cvr_ratio: 0.8      # 相对店铺平均转化率
+    drop_max_visitors: 100
+    drop_max_cvr_ratio: 0.5
+
+ops:
+  min_weekly_visitors_for_cvr: 200
+  cvr_drop_alert_ratio: 0.7      # 近 7 天转化率 < 前 7 天 × 该系数 → 异常
+  max_suggestions_per_report: 5
+  review_window_days: 7

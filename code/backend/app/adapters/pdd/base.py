@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from datetime import date
+from typing import Protocol
+
+from app.adapters.types import GoodsInfo, GoodsPatch, GoodsTraffic, KeywordStat, ListingPackage, OrderStats, PromotionStat, WriteResult
+
+
+class PddShopAdapter(Protocol):
+    """拼多多店铺只读接口。API、网页读取、模拟各有一个实现。"""
+
+    def list_goods(self, shop_id: str, day: date) -> list[GoodsInfo]: ...
+    def goods_daily_traffic(self, shop_id: str, day: date) -> list[GoodsTraffic]: ...
+    def order_stats(self, shop_id: str, day: date) -> OrderStats: ...
+    def promotion_daily(self, shop_id: str, day: date) -> list[PromotionStat]: ...
+    def keyword_insight(self, keywords: list[str]) -> list[KeywordStat]: ...
+
+
+class PddShopWriter(Protocol):
+    """写店铺接口：只有 tools/write 能拿到实例。"""
+
+    def create_goods_draft(self, pkg: ListingPackage) -> WriteResult: ...
+    def update_goods(self, goods_id: str, patch: GoodsPatch, before: GoodsInfo) -> WriteResult: ...

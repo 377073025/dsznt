@@ -1,0 +1,167 @@
+"""web 进程：给 Web 控制台的 REST API。只做查询和发起人工动作，耗时工作交给 worker。
+
+身份：局域网内暂用请求头 X-Open-Id 标识飞书用户（M3 接入飞书登录后替换）。
+"""
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from datetime import date
+from pathlib import Path
+from typing import Any, Iterator
+
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app import capabilities as caps
+from app.bootstrap import init
+from app.config import get_settings
+from app.data.channels import manual_import
+from app.db import session_scope
+from app.interfaces.feishu.handler import get_or_register
+from app.llm.gateway import Gateway
+from app.models import Application, Capability, Job, Report, Shop, Suggestion, Task, User
+from app.secrets import set_secret
+from app.workflow.jobs import enqueue
+from app.workflow.state_machine import MODELS, Actor, can
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init()
+    yield
+
+
+app = FastAPI(title="店铺 AI 闭环 · 控制台 API", lifespan=lifespan)
+
+
+def db() -> Iterator[Session]:
+    with session_scope() as s:
+        yield s
+
+
+def current_user(x_open_id: str = Header(default=""), s: Session = Depends(db)) -> User:
+    if not x_open_id:
+        raise HTTPException(401, "缺少 X-Open-Id")
+    return get_or_register(s, x_open_id)
+
+
+def require_owner(user: User = Depends(current_user)) -> User:
+    if user.role != "owner":
+        raise HTTPException(403, "只有店主可以执行该操作")
+    return user
+
+
+@app.get("/api/health")
+def health(s: Session = Depends(db)) -> dict[str, Any]:
+    capsd = {c.key: c.status for c in s.scalars(select(Capability))}
+    return {
+        "mode": get_settings().adapter_mode,
+        "capabilities": capsd,
+        "jobs_failed": len(s.scalars(select(Job.id).where(Job.status == "failed")).all()),
+        "llm_cost_today_cny": round(Gateway(None).spent_today(s), 2),
+    }
+
+
+@app.get("/api/capabilities")
+def list_capabilities(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    return [
+        {"key": c.key, "title": caps.CAPABILITIES[c.key].title, "status": c.status, "applications": c.application_ids,
+         "last_error": c.last_error}
+        for c in s.scalars(select(Capability))
+    ]
+
+
+class CredentialIn(BaseModel):
+    ref: str     # 例如 anthropic_api_key、feishu_app_secret
+    value: str
+
+
+@app.post("/api/capabilities/{key}/credential")
+def put_credential(key: str, body: CredentialIn, s: Session = Depends(db), _: User = Depends(require_owner)) -> dict:
+    if key not in caps.CAPABILITIES:
+        raise HTTPException(404, "未知能力")
+    set_secret(body.ref, body.value)  # 只进凭据管理器，不落库、不写日志
+    caps.mark_configured(s, key, body.ref)
+    return {"key": key, "status": caps.CONFIGURED}
+
+
+@app.get("/api/applications")
+def list_applications(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    return [{"id": a.id, "name": a.name, "level": a.level, "status": a.status, "note": a.note}
+            for a in s.scalars(select(Application).order_by(Application.id))]
+
+
+class ApplicationPatch(BaseModel):
+    status: str | None = None
+    note: str | None = None
+
+
+@app.patch("/api/applications/{app_id}")
+def patch_application(app_id: str, body: ApplicationPatch, s: Session = Depends(db), _: User = Depends(current_user)) -> dict:
+    a = s.get(Application, app_id)
+    if a is None:
+        raise HTTPException(404, "未知申请编号")
+    if body.status:
+        a.status = body.status
+    if body.note is not None:
+        a.note = body.note
+    return {"id": a.id, "status": a.status}
+
+
+@app.get("/api/reports/daily/{day}")
+def get_daily_report(day: date, s: Session = Depends(db)) -> dict:
+    r = s.scalar(select(Report).where(Report.kind == "daily", Report.period == day.isoformat()))
+    if r is None:
+        raise HTTPException(404, "该日没有早报")
+    return r.content
+
+
+@app.get("/api/suggestions")
+def list_suggestions(status: str | None = None, s: Session = Depends(db)) -> list[dict[str, Any]]:
+    q = select(Suggestion).order_by(Suggestion.id.desc())
+    if status:
+        q = q.where(Suggestion.status == status)
+    return [{"id": x.id, "day": x.day.isoformat(), "goods_id": x.goods_id, "action": x.action, "reason": x.reason,
+             "status": x.status, "version": x.version} for x in s.scalars(q.limit(100))]
+
+
+@app.get("/api/tasks")
+def list_tasks(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    return [{"id": t.id, "executor": t.executor, "status": t.status, "spec": t.spec, "version": t.version}
+            for t in s.scalars(select(Task).order_by(Task.id.desc()).limit(100))]
+
+
+@app.post("/api/{entity}/{obj_id}/actions/{event}")
+def act(entity: str, obj_id: int, event: str, s: Session = Depends(db), user: User = Depends(current_user)) -> dict:
+    """Web 控制台上的拍板、写入确认：与飞书按钮走同一条路径（card.apply 作业）。"""
+    model = MODELS.get(entity)
+    obj = s.get(model, obj_id) if model else None
+    if obj is None:
+        raise HTTPException(404, "对象不存在")
+    if not can(entity, obj.status, event, Actor("user", user.feishu_open_id, user.role)):
+        raise HTTPException(403, f"无权在状态 {obj.status} 执行 {event}")
+    enqueue(s, "card.apply", {"open_id": user.feishu_open_id, "entity": entity, "id": obj_id, "event": event},
+            dedupe_key=f"card:{entity}:{obj_id}:{event}:{obj.version}")
+    return {"queued": True}
+
+
+@app.post("/api/imports")
+async def upload_import(file: UploadFile = File(...), s: Session = Depends(db), user: User = Depends(current_user)) -> dict:
+    if user.role not in ("owner", "operator"):
+        raise HTTPException(403, "无权上传数据")
+    target_dir = get_settings().path("imports_dir")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / Path(file.filename or "upload.csv").name
+    path.write_bytes(await file.read())
+    shop = s.scalar(select(Shop).order_by(Shop.id))
+    rec = manual_import.import_file(s, shop, path, user.feishu_open_id)
+    return {"status": rec.status, "rows": rec.rows, "parser": rec.parser, "errors": rec.error_rows[:20]}
+
+
+@app.post("/api/jobs/{job_type}")
+def trigger(job_type: str, payload: dict[str, Any], s: Session = Depends(db), _: User = Depends(require_owner)) -> dict:
+    """手动触发作业，例如 daily.fetch {"day": "2026-10-23"}。"""
+    job = enqueue(s, job_type, payload)
+    return {"job_id": job.id if job else None}
