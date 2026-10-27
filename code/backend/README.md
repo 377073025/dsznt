@@ -7,7 +7,7 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -e .[dev]
-.venv\Scripts\python -m pytest -q          # 84 个测试（需要 Python ≥ 3.11）
+.venv\Scripts\python -m pytest -q          # 106 个测试（需要 Python ≥ 3.11）
 .venv\Scripts\python scripts\demo_run.py   # 演示：海盐换图闭环 + 周选品 + 上新，打印飞书卡片
 ```
 
@@ -15,9 +15,19 @@ python -m venv .venv
 
 ```bash
 .venv\Scripts\python scripts\init_db.py --shop "我的店" --owner-open-id ou_xxx
-.venv\Scripts\uvicorn app.main:app --port 8000   # web：控制台 API
+.venv\Scripts\uvicorn app.main:app --port 8000   # web：控制台 API + 页面 http://localhost:8000/
 .venv\Scripts\python -m app.worker               # worker：调度 + 作业 + 事件
 ```
+
+或者用看门狗一起启动（任一进程退出几秒内重启），并注册为登录后自启：
+
+```bash
+.venv\Scripts\python scripts\watchdog.py
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1   # 注册 Windows 计划任务；-Remove 卸载
+```
+
+日志：控制台为文本；`data/logs/web.log`、`worker.log` 为 JSON（每行一条，带 job_id / agent，按天滚动保留 30 天，token、手机号等自动打码）。
+备份：worker 每天 03:00 把数据库快照与素材库增量备份到 `backup.dir`（默认 `data/backups`，建议改到另一块盘），保留 30 天。
 
 `config/settings.yaml` 里 `adapter_mode: fake` 用模拟数据；改成 `real` 后，未实现或未就绪的能力会自动降级。
 
@@ -36,8 +46,13 @@ worker 会在主线程跑飞书长连接（SDK 要求），作业循环在后台
 | `app/agents/` | 统一运行器（工具循环、结构化输出、数字一致性校验、运行记录）与运营 / CEO / 选品 / 执行智能体；`catalog.py` 是可单独调用的能力目录，`status.py` 计算各智能体当前状态 |
 | `app/tools/` | 工具注册表：readonly / internal / shop 三级，写店铺前再校验写入确认 |
 | `app/workflow/` | 状态机、领域事件、作业队列（主通道 / 单独通道）、编排、单独任务（`adhoc.py`） |
-| `app/interfaces/feishu/` | 卡片、回调处理（3 秒内返回 + 异步执行）、通知 |
+| `app/interfaces/feishu/` | 卡片、回调处理（3 秒内返回 + 异步执行）、通知、单独任务指令（`adhoc_commands.py`） |
+| `app/interfaces/console_api.py` | Web 其余页面的接口：闭环总览、选品中心、任务看板、数据中心、规则配置（版本）、成本 |
+| `app/workflow/system.py` | Batch 轮询、预算告警、周度系统报告 |
+| `app/logs.py` / `app/backup.py` | JSON 日志与脱敏、每日备份 |
 | `app/main.py` / `app/worker.py` | web 与 worker 入口 |
+| `app/static/` | Web 控制台（纯静态 HTML/JS，无构建步骤）：智能体工作台（`app.js`）与闭环总览、选品中心、任务看板、数据中心、规则配置、成本（`pages.js`），按 `#/页面` 切换。右上角填飞书 open_id 作为身份（M3 接入飞书登录后替换） |
+| `scripts/` | 初始化、演示、看门狗与开机自启 |
 | `app/prompts/` | 各智能体提示词（带版本号） |
 | `config/` | 设置、规则、平台、数据项定义 |
 
@@ -45,14 +60,17 @@ worker 会在主线程跑飞书长连接（SDK 要求），作业循环在后台
 
 | 已实现（模拟适配器下可运行） | 待实现（按里程碑） |
 |------------------------------|--------------------|
-| 能力开关与自动降级 | M1：Playwright 页面实现与拼多多后台、1688 读取脚本（POC 确认入口与列名后） |
-| 通道路由、风控暂停 / 熔断、「恢复采集」按钮（熔断仅店主且满 24 小时）、人工导入 | M1：拼多多 / 1688 开放平台适配器（视 R07、R08 审批） |
-| 网页脚本执行器、写操作拦截、AI 认路与脚本转正、平台限速与每日页数上限 | M3：飞书实机联调（卡片回调能否走长连接，见 POC） |
-| 状态机与人工闸门、乐观锁、审计 | M4：图片执行器接生图服务；上新商品在拼多多的 ID 回填（按标题匹配快照） |
-| 运营诊断 → 早报 → 拍板 → 派活 → 写入确认 → 写店铺 → 验收 → 到期复盘 | M5：测款「优化」分支交运营 Agent；选品候选的「改一改」 |
-| 周选品 → 同意上新 → 物料包 → 写入确认 → 推送铺货工具 → 14 天测款结论 | M6：Batch 调用、预算告警推送、Web 前端 |
-| 飞书：真实适配器、长连接、文件导入、固定指令、「改一改」、对话转指令 | 选品：延伸选品、以图搜货、合规审查 |
+| 能力开关与自动降级 | M1：Playwright 页面实现与拼多多后台、1688 读取脚本（POC 确认入口与列名后）；届时浏览器锁改为按页释放 |
+| 通道路由、风控暂停 / 熔断、「恢复采集」按钮（熔断仅店主且满 24 小时）、人工导入 | M1：拼多多 / 1688 开放平台适配器（视 R07、R08 审批）；人工导入解析器用真实导出文件核对 |
+| 网页脚本执行器、写操作拦截、AI 认路与脚本转正、平台限速与每日页数上限 | M3：飞书实机联调（卡片回调能否走长连接，见 POC）；飞书登录替换 X-Open-Id |
+| 状态机与人工闸门、乐观锁、审计 | M4：图片执行器接真实生图服务；上新商品在拼多多的 ID 回填（按标题匹配快照） |
+| 运营诊断 → 早报 → 拍板 → 派活 → 写入确认 → 写店铺 → 验收 → 到期复盘 | 合规审查看图（现在只看标题、类目和图片文件名） |
+| 周选品（延伸 + 机会选品、同款与合规审查、备选货源）→ 同意上新 → 物料包 → 写入确认 → 推送铺货工具 → 测款 | 同供应商关联款（需要 1688 店铺商品接口）、在售款货源每日复查 `offer_watch` |
+| 测款「优化」：运营智能体诊断该款，建议走拍板，再观察 7 天（只优化一轮）；选品候选「改一改」（改售价 / 换备选货源） | 月度调权 `rules.monthly_tuning`、早报 Batch 的 06:45 定时提交（现在数据到齐即提交） |
+| 飞书：长连接、文件导入、固定指令、「改一改」、对话转指令；单独任务指令、完成私聊通知、卡片上转化 | Web「用户与权限」「素材库」「接入状态」页面 |
 | 超时：建议 48 小时过期、写入确认 24 小时取消、人工导入截止标记缺失，各提醒一次 | |
-| LLM 网关：计量、日预算、模型角色 | |
+| LLM 网关：计量、日 / 月预算与告警推送、模型角色、按智能体配置模型、Batch（超时改走实时） | |
+| 智能体工作台、单独任务与隔离；Web 闭环总览、选品中心、任务看板、数据中心、规则配置（留版本）、成本 | |
+| 运维：JSON 日志与脱敏、每日备份、看门狗与开机自启、周度系统报告、旧库自动补列 | |
 
 注：本机为 Python 3.11，代码按 3.11 兼容编写（设计文档写的是 3.12）。

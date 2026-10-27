@@ -25,6 +25,7 @@ JOB_AGENTS: dict[str, tuple[str, ...]] = {
     "selection.prepare": ("selection",),
     "task.execute": ("exec",),
     "task.write": ("exec",),
+    "llm.batch_poll": ("ops",),
 }
 # 主流程里各智能体依赖的能力开关（每组任意一个 healthy 即可）
 AGENT_NEEDS: dict[str, tuple[tuple[str, ...], ...]] = {
@@ -70,13 +71,12 @@ def agents_status(s: Session) -> list[dict[str, Any]]:
         what = {"waiting_human": "验证码 / 登录", "circuit_open": "熔断待店主确认", "manual_requested": "等待人工导出"}[j.status]
         waiting["web"].append(f"{j.day} {j.item}：{what}")
 
-    gw = Gateway(None)
-    over_budget = gw.spent_today(s) >= gw.settings.budget["daily_cny"]
+    over_budget = Gateway(None).over_budget(s)
     out = []
     for a, title in AGENT_TITLES.items():
         paused = [f"需要 {'/'.join(g)}" for g in AGENT_NEEDS.get(a, ()) if not any(caps.is_healthy(s, k) for k in g)]
         if over_budget:
-            paused.append("今日 LLM 预算已用完（关键环节除外）")
+            paused.append(f"{over_budget}（关键环节除外）")
         runs = [r for ag, r in running_d if ag == a]
         if runs:
             state = "running"

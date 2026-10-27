@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.types import OfferDetail
 from app.agents import ceo, selection
-from app.agents.catalog import CATALOG, CapContext, missing_capabilities
+from app.agents.catalog import CATALOG, IMAGE_MODES, CapContext, missing_capabilities
 from app.agents.runtime import AgentRunner
 from app.agents.tracking import RunCancelled, RunTracker, request_cancel
 from app.data import queries
@@ -184,6 +184,21 @@ def cancel(s: Session, user: User, task_id: int) -> AdhocTask:
 
 # ---------- 转为建议 / 候选 ----------
 
+def can_promote(task: AdhocTask) -> bool:
+    """结果里有可转化的内容：评估通过、货源过了硬性过滤、诊断有建议。通知卡片据此决定是否带按钮。"""
+    cap = CATALOG[task.capability]
+    if task.status != "done" or cap.promote_to is None:
+        return False
+    r = task.result
+    if task.capability == "selection.evaluate_offer":
+        return bool(r.get("passed"))
+    if task.capability == "exec.listing":
+        return not r.get("reject_reasons")
+    if task.capability == "ops.diagnose":
+        return bool(r.get("suggestions"))
+    return True
+
+
 def promote(s: Session, services: Services, user: User, task_id: int, indexes: list[int] | None = None) -> str:
     """把单独任务的结果交给主流程：建议进入「待拍板」，候选进入「已推荐」，之后照常走人工闸门。"""
     if user.role not in SUBMIT_ROLES:
@@ -224,7 +239,8 @@ def _to_suggestions(s: Session, task: AdhocTask, indexes: list[int] | None) -> l
                        reason=f"按要求「{prm['instruction']}」生成{origin}", evidence=r["selling_points"],
                        confidence="medium", needs_write=True)]
     elif task.capability == "exec.image":
-        drafts = [dict(goods_id=r["goods_id"], type="main_image", action=f"建议换用新主图（草稿 {r['path']}）",
+        drafts = [dict(goods_id=r["goods_id"], type="main_image",
+                       action=f"建议换用新主图（{IMAGE_MODES.get(r.get('mode', ''), '修图')}草稿 {r['path']}）",
                        reason=f"按要求「{r['instruction']}」生成{origin}", evidence=[], confidence="medium", needs_write=True)]
     else:
         raise AdhocError(f"{task.capability} 没有转为建议的规则")
@@ -242,17 +258,26 @@ def _to_suggestions(s: Session, task: AdhocTask, indexes: list[int] | None) -> l
 
 
 def _to_candidate(s: Session, task: AdhocTask) -> Candidate:
+    """单品评估：通过才能转；物料包：通过硬性过滤才能转，理由注明来自物料包（分数未计需求热度）。"""
     r = task.result
-    if not r.get("passed"):
-        raise AdhocError("单品评估未通过，不能转为候选")
+    if task.capability == "exec.listing":
+        if r["reject_reasons"]:
+            raise AdhocError("货源未通过硬性过滤，不能转为候选：" + "；".join(r["reject_reasons"]))
+        reason = (f"来自单独任务 #{task.id} 的上架物料包（标题「{r['package']['title']}」），"
+                  "未经需求侦察，分数未计需求热度")
+        risks, heat, trend = ["需求热度未评估"], 0.0, 0.0
+    else:
+        if not r.get("passed"):
+            raise AdhocError("单品评估未通过，不能转为候选")
+        reason, risks, heat, trend = r["reason"], r["risks"], r["heat"], r["trend"]
     offer = selection._upsert_offer(s, OfferDetail.model_validate(r["offer"]))
     iso = _now_cn().date().isocalendar()
     demand = Demand(week=f"{iso.year}-W{iso.week:02d}", keyword=r["keyword"], seed_type="adhoc", seed_ref=f"adhoc:{task.id}",
-                    heat=r["heat"], trend=r["trend"], competitors=[])
+                    heat=heat, trend=trend, competitors=[])
     s.add(demand)
     s.flush()
     cand = Candidate(demand_id=demand.id, offer_id=offer.id, price_plan=r["price_plan"], score=r["score"],
-                     breakdown=r["breakdown"], reason=r["reason"], risks=r["risks"], status="scored")
+                     breakdown=r["breakdown"], reason=reason, risks=risks, status="scored")
     s.add(cand)
     s.flush()
     transition(s, "candidate", cand.id, "recommend", SYSTEM, {"adhoc_task_id": task.id})

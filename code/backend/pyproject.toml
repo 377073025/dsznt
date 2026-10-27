@@ -26,3 +26,6 @@ pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["prompts/*.md", "static/*"]

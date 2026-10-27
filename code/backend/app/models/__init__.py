@@ -26,6 +26,7 @@ from app.models.system import (  # noqa: F401
     DomainEvent,
     FetchJob,
     Job,
+    LlmBatch,
     LlmUsage,
     ManualImport,
     ProcessedAction,

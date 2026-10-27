@@ -34,9 +34,9 @@ class LarkFeishu:
         self.client = lark.Client.builder().app_id(app_id).app_secret(app_secret).log_level(lark.LogLevel.WARNING).build()
         self.download_dir = download_dir
 
-    def _send(self, chat_id: str, msg_type: str, content: dict) -> str:
-        req = (CreateMessageRequest.builder().receive_id_type("chat_id")
-               .request_body(CreateMessageRequestBody.builder().receive_id(chat_id).msg_type(msg_type)
+    def _send(self, receive_id: str, msg_type: str, content: dict, id_type: str = "chat_id") -> str:
+        req = (CreateMessageRequest.builder().receive_id_type(id_type)
+               .request_body(CreateMessageRequestBody.builder().receive_id(receive_id).msg_type(msg_type)
                              .content(json.dumps(content, ensure_ascii=False)).build())
                .build())
         return _check(self.client.im.v1.message.create(req), "发送消息").data.message_id
@@ -46,6 +46,12 @@ class LarkFeishu:
 
     def send_text(self, chat_id: str, text: str) -> str:
         return self._send(chat_id, "text", {"text": text})
+
+    def send_card_to_user(self, open_id: str, card: dict) -> str:
+        return self._send(open_id, "interactive", card, "open_id")
+
+    def send_text_to_user(self, open_id: str, text: str) -> str:
+        return self._send(open_id, "text", {"text": text}, "open_id")
 
     def update_card(self, token: str, card: dict) -> None:
         """token 为 message_id：用「更新应用发送的消息卡片」接口，卡片需开启 update_multi。"""

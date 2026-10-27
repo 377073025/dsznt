@@ -204,7 +204,7 @@ def test_workbench_api(env):
     services, gateway = env
     from app import main
 
-    main.init = lambda: None
+    main.init = lambda **_: None
     with TestClient(main.app) as c:
         caps = {x["key"]: x for x in c.get("/api/agent-capabilities").json()}
         assert len(caps) == 10 and "goods_id" in caps["ops.diagnose"]["params_schema"]["properties"]
@@ -242,3 +242,38 @@ def test_run_steps_record_tools(env):
         run = rs.query(AgentRun).filter_by(capability="ceo.dispatch").one()
         steps = rs.query(AgentRunStep).filter_by(run_id=run.id).all()
         assert run.turns == 2 and [x.name for x in steps] == ["create_task"] and "task_id" in steps[0].summary
+
+
+def test_purge_old_runs(env):
+    from app.agents.tracking import RunTracker, purge_old_runs
+    from app.db import utcnow
+
+    old, recent, live = (RunTracker().open("ops.diagnose") for _ in range(3))
+    for h in (old, recent, live):
+        h.step("tool", "get_metrics", "x")
+    old.finish("succeeded")
+    recent.finish("succeeded")
+    with runs_scope() as rs:
+        rs.get(AgentRun, old.run_id).started_at = utcnow() - timedelta(days=200)
+        rs.get(AgentRun, live.run_id).started_at = utcnow() - timedelta(days=200)  # 运行中的不清
+        rs.query(AgentRunStep).filter_by(run_id=recent.run_id).one().at = utcnow() - timedelta(days=40)
+    assert purge_old_runs() == (1, 2)
+    with runs_scope() as rs:
+        assert {r.id for r in rs.query(AgentRun)} == {recent.run_id, live.run_id}
+        assert [x.run_id for x in rs.query(AgentRunStep)] == [live.run_id]
+
+
+def test_console_page_and_helpers(env):
+    services, _ = env
+    from app import main
+
+    main.init = lambda **_: None
+    backfill(services, DAY, 1)
+    with TestClient(main.app) as c:
+        page = c.get("/")
+        assert page.status_code == 200 and "智能体工作台" in page.text
+        assert "renderParams" in c.get("/app.js").text
+        assert c.get("/api/me").status_code == 401
+        assert c.get("/api/me", headers={"X-Open-Id": OPERATOR}).json()["role"] == "operator"
+        assert "g_haiyan" in {p["goods_id"] for p in c.get("/api/products").json()}
+        assert c.get("/api/agents").status_code == 200  # 静态挂载不遮挡 API

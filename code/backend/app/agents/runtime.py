@@ -14,11 +14,12 @@ from typing import Any, Callable, Generic, TypeVar
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from app.adapters.llm.base import LLMRequest, strict_json_schema
+from app.adapters.llm.base import LLMRequest, LLMResult, strict_json_schema
 from app.agents.facts import FactTable, check_numbers
 from app.agents.tracking import RunCancelled, RunHandle, RunTracker
 from app.config import BACKEND_DIR, get_settings
 from app.llm.gateway import Gateway
+from app.logs import log_context
 from app.services import Services
 from app.tools.registry import ToolContext, ToolDef, tools_for
 
@@ -80,11 +81,14 @@ class AgentRunner:
         facts: FactTable | None = None,
         context: dict[str, Any] | None = None,
         task_id: int | None = None,
+        first: LLMResult | None = None,
     ) -> Out:
+        """first：第 1 轮已由 Batch 拿到的结果（已按半价计量）；之后的重试、工具调用仍走实时调用。"""
         model, effort = self.gateway.resolve(spec.name, spec.model_role)
         handle = self.tracker.open(spec.name, model)
         try:
-            out = self._run(handle, spec, model, effort, user_content, facts, context, task_id)
+            with log_context(agent=spec.name):
+                out = self._run(handle, spec, model, effort, user_content, facts, context, task_id, first)
         except RunCancelled as e:
             handle.finish("cancelled", str(e))
             raise
@@ -96,29 +100,29 @@ class AgentRunner:
 
     def _run(self, handle: RunHandle, spec: AgentSpec[Out], model: str, effort: str | None,
              user_content: str | list[dict[str, Any]], facts: FactTable | None,
-             context: dict[str, Any] | None, task_id: int | None) -> Out:
+             context: dict[str, Any] | None, task_id: int | None, first: LLMResult | None = None) -> Out:
         limits = get_settings().agent_limits
         max_turns = spec.max_turns or limits["max_turns"]
         tools = spec.tools()
         tool_map = {t.name: t for t in tools}
         ctx = ToolContext(self.s, self.services, spec.name, task_id, lane=self.lane)
-        ctx_payload = {**(context or {}), "facts": facts.values if facts else {}}
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
         used_tokens, format_retry, number_retry = 0, False, False
 
         for turn in range(max_turns):
-            req = LLMRequest(
-                agent=spec.name, model=model, effort=effort, system=spec.system_prompt, messages=messages,
-                tools=[t.schema() for t in tools], output_schema=strict_json_schema(spec.output), context=ctx_payload,
-                lane=self.lane,
-            )
-            handle.progress(f"等待模型（第 {turn + 1} 轮）")
-            res = self.gateway.call(self.s, req)
+            req = self._request(spec, model, effort, messages, facts, context)
+            batched = turn == 0 and first is not None
+            if batched:
+                handle.step("llm", "Batch 结果", "第 1 轮使用 Batch 返回的结果", current="读取 Batch 结果")
+                res = first
+            else:
+                handle.progress(f"等待模型（第 {turn + 1} 轮）")
+                res = self.gateway.call(self.s, req)
             turn_tokens = res.usage.input_tokens + res.usage.output_tokens
             used_tokens += turn_tokens
             u = res.usage
-            cost = self.gateway.cost_cny(res.model or model, u.input_tokens, u.output_tokens, u.cache_read_tokens, False)
+            cost = self.gateway.cost_cny(res.model or model, u.input_tokens, u.output_tokens, u.cache_read_tokens, batched)
             handle.turn_done(turn_tokens, round(cost * 100))
             if used_tokens > limits["max_tokens_per_run"]:
                 raise AgentFailed(f"{spec.name} 超过单次 token 上限")
@@ -165,6 +169,20 @@ class AgentRunner:
             raise AgentFailed(f"{spec.name} 数字校验两次不通过：{bad}")
 
         raise AgentFailed(f"{spec.name} 超过最大轮数 {max_turns}")
+
+    def _request(self, spec: AgentSpec, model: str, effort: str | None, messages: list[dict[str, Any]],
+                 facts: FactTable | None, context: dict[str, Any] | None) -> LLMRequest:
+        return LLMRequest(
+            agent=spec.name, model=model, effort=effort, system=spec.system_prompt, messages=messages,
+            tools=[t.schema() for t in spec.tools()], output_schema=strict_json_schema(spec.output),
+            context={**(context or {}), "facts": facts.values if facts else {}}, lane=self.lane,
+        )
+
+    def first_request(self, spec: AgentSpec, user_content: str | list[dict[str, Any]], facts: FactTable | None = None,
+                      context: dict[str, Any] | None = None) -> LLMRequest:
+        """与 run() 第 1 轮完全相同的请求，用于提交 Batch。"""
+        model, effort = self.gateway.resolve(spec.name, spec.model_role)
+        return self._request(spec, model, effort, [{"role": "user", "content": user_content}], facts, context)
 
     def _run_tool(self, tool_map: dict[str, ToolDef], ctx: ToolContext, block: dict[str, Any]) -> dict[str, Any]:
         t = tool_map.get(block["name"])

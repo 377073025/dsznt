@@ -8,7 +8,7 @@ from tests.conftest import DAY, OPERATOR, OWNER
 def _client(env) -> TestClient:
     from app import main
 
-    main.init = lambda: None  # conftest 已初始化测试库
+    main.init = lambda **_: None  # conftest 已初始化测试库
     return TestClient(main.app)
 
 

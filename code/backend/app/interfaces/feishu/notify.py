@@ -36,13 +36,13 @@ def remember_chat(s: Session, chat: str) -> bool:
 
 def send_card(
     s: Session, services: Services, card: dict[str, Any], entity: str, entity_id: int,
-    also: list[tuple[str, int]] | None = None,
+    also: list[tuple[str, int]] | None = None, to_user: str = "",
 ) -> str | None:
-    """also：同一张卡片里还带按钮的其他实体（例如早报里的每条建议）。"""
+    """also：同一张卡片里还带按钮的其他实体（例如早报里的每条建议）。to_user：私聊发给这个 open_id，不发群。"""
     if services.feishu is None or not caps.is_healthy(s, "feishu_bot"):
         log.warning("飞书不可用，卡片未发送：%s #%s", entity, entity_id)
         return None
-    mid = services.feishu.send_card(chat_id(s), card)
+    mid = services.feishu.send_card_to_user(to_user, card) if to_user else services.feishu.send_card(chat_id(s), card)
     for e, i in [(entity, entity_id), *(also or [])]:
         s.add(CardMessage(message_id=mid, entity=e, entity_id=i, card=card))
     s.flush()

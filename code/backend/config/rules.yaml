@@ -20,6 +20,11 @@ selection:
     dropship_auto: 15
     fit: 10
     assets: 5
+  # 合规审查（04 号文档 H7 与「商品风险」）：先按词库拦，词库没命中再交模型看标题与图片
+  compliance:
+    brand_words: [香奈儿, 迪奥, 祖玛珑, Jo Malone, 野格, 无印良品, MUJI, 宜家, IKEA, 迪士尼, Disney, 漫威, 三丽鸥,
+                  Hello Kitty, 哆啦A梦, 皮卡丘, 宝可梦, 小黄人, 大牌同款, 专柜正品, 原单, 高仿, 复刻]
+    llm_review: true
   candidate_min_score: 70
   weekly_max_recommend: 5
   profit:
@@ -33,6 +38,7 @@ selection:
     keep_min_cvr_ratio: 0.8      # 相对店铺平均转化率
     drop_max_visitors: 100
     drop_max_cvr_ratio: 0.5
+    optimize_days: 7             # 判定「优化」后，交运营智能体诊断，再观察的天数
 
 ops:
   min_weekly_visitors_for_cvr: 200

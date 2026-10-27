@@ -13,8 +13,10 @@ from app.agents.runtime import AgentRunner
 from app.agents.tracking import RunTracker
 from app.db import session_scope, utcnow
 from app.llm.gateway import BudgetExceeded, Gateway
+from app.logs import log_context
 from app.models import Job
 from app.services import Services
+from app.workflow import rule_config
 from app.workflow.events import dispatch_pending
 
 log = logging.getLogger(__name__)
@@ -87,7 +89,8 @@ def run_one(services: Services, gateway: Gateway, worker_id: str = "worker", lan
             return False
         job_id, job_type, payload, attempts = job.id, job.type, dict(job.payload), job.attempts
     try:
-        with session_scope() as s:
+        with log_context(job_id=job_id, job_type=job_type, lane=lane), session_scope() as s:
+            rule_config.apply_latest(s)  # 店主在 Web 改过规则时，worker 从下一个作业起生效
             JOB_HANDLERS[job_type](JobContext(s, services, gateway, job_id, job_type, lane), payload)
             s.get(Job, job_id).status = "done"
     except BudgetExceeded as e:

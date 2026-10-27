@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 from app.data import router
 from app.interfaces.feishu import cards
 from app.interfaces.feishu.notify import cards_for
-from app.models import CardMessage, FetchJob, ProcessedAction, Shop, Task, User
+from app.models import AdhocTask, CardMessage, FetchJob, ProcessedAction, Shop, Task, User
 from app.services import Services
+from app.workflow import adhoc
 from app.workflow.events import audit
 from app.workflow.jobs import JobContext, enqueue, job_handler
 from app.workflow.state_machine import MODELS, Actor, TransitionDenied, can, transition
@@ -22,6 +23,7 @@ from app.workflow.state_machine import MODELS, Actor, TransitionDenied, can, tra
 EVENT_LABELS = {
     "approve": "已同意", "reject": "已拒绝", "revise": "待修改，请直接回复修改意见", "confirm": "已确认写入",
     "cancel": "已取消写入", "keep": "已确认留款", "optimize": "已确认优化后再观察", "drop": "已确认下架",
+    "promote": "已转化，请在新卡片上拍板",
 }
 
 
@@ -41,7 +43,7 @@ def get_or_register(s: Session, open_id: str) -> User:
 def on_card_action(s: Session, open_id: str, value: dict[str, Any]) -> dict[str, Any]:
     user = get_or_register(s, open_id)
     entity, obj_id, event, version = value["entity"], int(value["id"]), value["event"], int(value["version"])
-    if entity not in MODELS and entity != "fetch_job":
+    if entity not in MODELS and entity not in ("fetch_job", "adhoc_task"):
         return _toast("error", "无法识别的操作")
     key = f"{entity}:{obj_id}:{event}:{version}"
     if s.get(ProcessedAction, key) is not None:
@@ -51,6 +53,12 @@ def on_card_action(s: Session, open_id: str, value: dict[str, Any]) -> dict[str,
         reason = router.resume_denied_reason(job, user.role) if job else "采集任务不存在"
         if reason:
             return _toast("error", reason)
+    elif entity == "adhoc_task":
+        t = s.get(AdhocTask, obj_id)
+        if user.role not in adhoc.SUBMIT_ROLES:
+            return _toast("error", "你没有这个操作的权限")
+        if t is None or t.status != "done":
+            return _toast("warning", "这个单独任务已经处理过了")
     else:
         obj = s.get(MODELS[entity], obj_id)
         actor = Actor("user", open_id, user.role)
@@ -75,6 +83,10 @@ def apply_action(s: Session, services: Services, open_id: str, entity: str, obj_
         audit(s, actor.label, "fetch.resume", f"fetch_job:{obj_id}", {"status": job.status})
         router.resume(s, services, s.scalar(select(Shop).order_by(Shop.id)), obj_id)
         _resolve_cards(s, services, entity, obj_id, "已恢复采集")
+        return
+    if entity == "adhoc_task":
+        ref = adhoc.promote(s, services, user, obj_id)
+        _resolve_cards(s, services, entity, obj_id, f"已转化为 {ref}，请在新卡片上拍板")
         return
     if entity == "task" and event == "confirm":
         task = s.get(Task, obj_id)

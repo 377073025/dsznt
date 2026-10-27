@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>店铺 AI 控制台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">店铺 AI 闭环</div>
+  <nav id="nav" class="nav">
+    <a href="#/agents" data-view="agents">智能体工作台</a><a href="#/overview" data-view="overview">闭环总览</a><a
+      href="#/selection" data-view="selection">选品中心</a><a href="#/board" data-view="board">任务看板</a><a
+      href="#/data" data-view="data">数据中心</a><a href="#/rules" data-view="rules">规则配置</a><a
+      href="#/costs" data-view="costs">成本</a>
+  </nav>
+  <div id="health" class="health"></div>
+  <label class="who">身份
+    <input id="openId" placeholder="飞书 open_id" autocomplete="off">
+    <span id="role" class="muted"></span>
+  </label>
+</header>
+
+<main data-view="agents">
+  <section>
+    <div class="section-head">
+      <h2>智能体</h2>
+      <span class="muted" id="refreshed"></span>
+    </div>
+    <div id="agents" class="agents"></div>
+  </section>
+
+  <section id="runsPanel" class="panel" hidden>
+    <div class="section-head">
+      <h2 id="runsTitle">运行记录</h2>
+      <div class="seg" id="runsSource">
+        <button data-v="" class="on">全部</button><button data-v="main">主流程</button><button data-v="adhoc">单独任务</button>
+      </div>
+      <button class="ghost" id="runsClose">关闭</button>
+    </div>
+    <div class="split">
+      <div class="table-wrap"><table id="runsTable"></table></div>
+      <div id="runDetail" class="detail muted">点一条运行记录查看步骤</div>
+    </div>
+  </section>
+
+  <section class="cols">
+    <div class="panel">
+      <h2>提交单独任务</h2>
+      <p class="muted small">单独任务跑在单独通道：不占主流程预算、不进早报和建议、不能写店铺。结果满意可以「转为建议 / 候选」，之后照常走拍板。</p>
+      <form id="adhocForm">
+        <div class="row">
+          <label>智能体<select id="fAgent"></select></label>
+          <label>能力<select id="fCap"></select></label>
+        </div>
+        <p id="fCapDesc" class="muted small"></p>
+        <div id="fParams"></div>
+        <label>备注<input id="fNote" placeholder="可选"></label>
+        <div class="row end">
+          <span id="fMsg" class="small"></span>
+          <button type="submit">提交</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel grow">
+      <div class="section-head">
+        <h2>单独任务</h2>
+        <select id="adhocFilter">
+          <option value="">全部状态</option>
+          <option value="queued">排队中</option><option value="deferred">已顺延</option>
+          <option value="running">运行中</option><option value="done">已完成</option>
+          <option value="failed">失败</option><option value="cancelled">已取消</option>
+          <option value="promoted">已转化</option>
+        </select>
+      </div>
+      <div id="adhocList"></div>
+    </div>
+  </section>
+</main>
+<main data-view="overview" id="v-overview" hidden></main>
+<main data-view="selection" id="v-selection" hidden></main>
+<main data-view="board" id="v-board" hidden></main>
+<main data-view="data" id="v-data" hidden></main>
+<main data-view="rules" id="v-rules" hidden></main>
+<main data-view="costs" id="v-costs" hidden></main>
+<datalist id="goodsList"></datalist>
+<script src="app.js"></script>
+<script src="pages.js"></script>
+</body>
+</html>

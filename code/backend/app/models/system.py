@@ -209,3 +209,16 @@ class RuleConfig(Base):
     rule_version: Mapped[int] = mapped_column(Integer, default=1)
     approved_by: Mapped[str] = mapped_column(String(64), default="")
     at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LlmBatch(Base, TimestampMixin):
+    """提交到模型服务的 Batch（07 号文档 7.4 节）：结果回来后恢复 resume 作业；超过 deadline 未返回则改走实时调用。"""
+
+    __tablename__ = "llm_batch"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_batch_id: Mapped[str] = mapped_column(String(128), default="")
+    agent: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="submitted")  # submitted / ended / fallback
+    results: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # custom_id → LLMResult
+    resume: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {type, payload}：结果到了以后要继续的作业
+    deadline_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,8 +18,10 @@ from sqlalchemy.orm import Session
 from app import capabilities as caps
 from app.bootstrap import init
 from app.config import get_settings
+from app.data import queries
 from app.data.channels import manual_import
 from app.db import session_scope
+from app.interfaces import console_api
 from app.interfaces.feishu.handler import get_or_register
 from app.llm.gateway import Gateway
 from app.agents import status as agent_status
@@ -33,7 +36,7 @@ from app.workflow.state_machine import MODELS, Actor, can
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    init()
+    init(process="web")
     yield
 
 
@@ -66,6 +69,18 @@ def health(s: Session = Depends(db)) -> dict[str, Any]:
         "jobs_failed": len(s.scalars(select(Job.id).where(Job.status == "failed")).all()),
         "llm_cost_today_cny": round(Gateway(None).spent_today(s), 2),
     }
+
+
+@app.get("/api/me")
+def me(user: User = Depends(current_user)) -> dict[str, Any]:
+    return {"open_id": user.feishu_open_id, "name": user.name, "role": user.role}
+
+
+@app.get("/api/products")
+def list_products(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    """在售商品，供表单下拉选择。"""
+    return [{"goods_id": p.goods_id, "name": p.name, "title": p.title, "price_fen": p.price_fen}
+            for p in queries.products(s)]
 
 
 @app.get("/api/capabilities")
@@ -203,7 +218,7 @@ class AdhocIn(BaseModel):
 def _adhoc_dict(t: AdhocTask) -> dict[str, Any]:
     return {"id": t.id, "agent": t.agent, "capability": t.capability, "title": CATALOG[t.capability].title,
             "params": t.params, "note": t.note, "submitted_by": t.submitted_by, "status": t.status, "error": t.error,
-            "result": t.result, "run_id": t.run_id, "promoted_to": t.promoted_to,
+            "result": t.result, "run_id": t.run_id, "promoted_to": t.promoted_to, "can_promote": adhoc.can_promote(t),
             "created_at": t.created_at.isoformat(), "updated_at": t.updated_at.isoformat()}
 
 
@@ -259,3 +274,9 @@ def trigger(job_type: str, payload: dict[str, Any], s: Session = Depends(db), _:
     """手动触发作业，例如 daily.fetch {"day": "2026-10-23"}。"""
     job = enqueue(s, job_type, payload)
     return {"job_id": job.id if job else None}
+
+
+app.include_router(console_api.api)
+
+# Web 控制台静态页（无构建步骤）。放在最后挂载，不遮挡 /api 路由。
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="console")

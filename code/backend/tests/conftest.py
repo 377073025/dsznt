@@ -29,7 +29,12 @@ def env(tmp_path):
         s.add(User(feishu_open_id=OPERATOR, name="运营", role="operator"))
     services = build_services()
     set_services(services)
-    return services, Gateway(services.llm)
+    yield services, Gateway(services.llm)
+    # 规则在线修改会改内存里的规则，测试之间恢复为 rules.yaml 基线
+    from app.workflow import rule_config
+
+    rule_config._replace(rule_config._baseline())
+    rule_config._applied_id = None
 
 
 def backfill(services, end: date, days: int) -> None:

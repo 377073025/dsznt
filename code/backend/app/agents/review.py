@@ -76,18 +76,21 @@ def describe(s: Session, rv: Review) -> str:
 
 
 def run_due_trials(s: Session, day: date) -> list[tuple[TestRun, float]]:
-    """测款满 14 天：按访客与相对店铺平均转化率给出 keep / optimize / drop，等店主确认。
+    """测款期满（首轮 14 天，优化后再观察 7 天）：按访客与相对店铺平均转化率给出 keep / optimize / drop，等店主确认。
 
     返回 (测款记录, 同期店铺其他商品的平均转化率)。
     """
     cfg = get_settings().rules["selection"]["test_run"]
-    days = cfg["days"]
-    due = s.scalars(select(TestRun).where(TestRun.verdict == "", TestRun.start_date <= day - timedelta(days=days - 1))).all()
+    pending = s.scalars(select(TestRun).where(TestRun.verdict == "")).all()
     out = []
-    for tr in due:
-        visitors, cvr, shop_cvr = trial_stats(s, tr.goods_id, tr.start_date, days)
+    for tr in pending:
+        if tr.start_date > day - timedelta(days=tr.days - 1):
+            continue
+        visitors, cvr, shop_cvr = trial_stats(s, tr.goods_id, tr.start_date, tr.days)
         tr.visitors, tr.cvr = visitors, round(cvr, 4)
         tr.verdict = trial_verdict(visitors, cvr, shop_cvr, cfg)
+        if tr.trial_round > 1 and tr.verdict == "optimize":
+            tr.verdict = "drop"  # 已经优化过一轮仍不达标，不再继续优化
         out.append((tr, shop_cvr))
     s.flush()
     return out

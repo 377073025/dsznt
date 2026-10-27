@@ -1,16 +1,16 @@
 """启动初始化：建表、写入能力开关与申请清单、注册作业处理器和事件订阅。web 与 worker 共用。"""
 from __future__ import annotations
 
-import logging
-
 from app import capabilities
 from app.config import get_settings
 from app.db import create_all, init_engine, session_scope
+from app.logs import setup_logging
 from app.models import Shop, User
 
 
-def init(db_url: str | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+def init(db_url: str | None = None, process: str | None = None) -> None:
+    """process：web / worker 时写 JSON 日志文件（data/logs/<process>.log）。"""
+    setup_logging(process)
     init_engine(db_url)
     create_all()
     # 导入即注册：作业处理器与事件订阅
@@ -19,6 +19,7 @@ def init(db_url: str | None = None) -> None:
     import app.workflow.pipelines  # noqa: F401
     import app.workflow.adhoc  # noqa: F401
     import app.workflow.timeouts  # noqa: F401
+    import app.workflow.system  # noqa: F401
 
     with session_scope() as s:
         capabilities.seed(s, fake_mode=get_settings().adapter_mode == "fake")

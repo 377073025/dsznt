@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.data import queries, router, snapshot
 from app.interfaces.feishu import cards
 from app.interfaces.feishu.notify import send_card
-from app.models import Candidate, DomainEvent, FetchJob, Job, Offer, Product, Shop, Suggestion, Task, TestRun
+from app.models import Candidate, DomainEvent, FetchJob, Job, LlmBatch, Offer, Product, Shop, Suggestion, Task, TestRun
 from app.workflow.events import subscribe
 from app.workflow.jobs import JobContext, enqueue, job_handler
 from app.workflow.state_machine import SYSTEM, transition
@@ -51,7 +51,16 @@ def daily_analyze(ctx: JobContext, p: dict[str, Any]) -> None:
     missing = [i for i in DAILY_ITEMS if jobs.get(i) != router.SUCCESS]
     # 缺少分款流量数据时不做诊断，避免在残缺数据上下结论
     if "goods_daily_traffic" not in missing:
-        ops.run(ctx.runner, s, shop, day)
+        batch_conf = get_settings().raw["llm_batch"]
+        batch = s.get(LlmBatch, p["batch_id"]) if p.get("batch_id") else None
+        if batch is None and batch_conf["enabled"] and ops.SPEC.name in batch_conf["agents"]:
+            # 诊断先提交 Batch（半价），结果回来后由 llm.batch_poll 重新排入本作业；超时则改走实时调用
+            b = ctx.gateway.submit_batch(s, ops.SPEC.name, {"ops": ops.diagnose_request(ctx.runner, s, day)},
+                                         {"type": "daily.analyze", "payload": dict(p)},
+                                         timedelta(minutes=batch_conf["max_wait_minutes"]))
+            enqueue(s, "llm.batch_poll", {"batch_id": b.id})
+            return
+        ops.run(ctx.runner, s, shop, day, first=ctx.gateway.batch_result(batch, "ops"))
     reviews = [review.describe(s, rv) for rv in review.run_due_reviews(s, day)]
     status = "全部数据已就绪" if not missing else f"缺少 {'、'.join(missing)}，相关分析已跳过"
     report = ceo.daily_report(ctx.runner, s, day, status, reviews)
@@ -59,12 +68,11 @@ def daily_analyze(ctx: JobContext, p: dict[str, Any]) -> None:
     report.feishu_message_id = send_card(
         s, ctx.services, cards.daily_report(report, sugs), "report", report.id, also=[("suggestion", x.id) for x in sugs],
     ) or ""
-    days = get_settings().rules["selection"]["test_run"]["days"]
     for tr, shop_cvr in review.run_due_trials(s, day):
         cand = s.get(Candidate, tr.candidate_id)
         title = s.get(Offer, cand.offer_id).title
-        send_card(s, ctx.services, cards.trial_result(cand, title, tr.visitors, tr.cvr, shop_cvr, tr.verdict, days),
-                  "candidate", cand.id)
+        send_card(s, ctx.services, cards.trial_result(cand, title, tr.visitors, tr.cvr, shop_cvr, tr.verdict, tr.days,
+                                                      tr.trial_round), "candidate", cand.id)
 
 
 @job_handler("ceo.dispatch")
@@ -186,7 +194,8 @@ def _on_accepted(s: Session, ev: DomainEvent) -> None:
         cand = s.get(Candidate, task.ref_id)
         transition(s, "candidate", cand.id, "list", SYSTEM)
         transition(s, "candidate", cand.id, "start_test", SYSTEM)
-        s.add(TestRun(candidate_id=cand.id, goods_id=task.output.get("write_ref", ""), start_date=queries.business_day(s)))
+        s.add(TestRun(candidate_id=cand.id, goods_id=task.output.get("write_ref", ""), start_date=queries.business_day(s),
+                      days=get_settings().rules["selection"]["test_run"]["days"]))
         return
     if task.ref_type != "suggestion":
         return
@@ -227,3 +236,42 @@ def _on_circuit(s: Session, ev: DomainEvent) -> None:
 def _on_task_problem(s: Session, ev: DomainEvent) -> None:
     _need_human(s, "任务异常", f"任务 #{ev.entity_id} {ev.type}：{ev.payload.get('comment') or ev.payload.get('error', '')}",
                 "task", ev.entity_id)
+
+
+# ---------- 测款「优化」：交运营智能体诊断，再观察 ----------
+
+@subscribe("candidate.optimizing")
+def _on_optimizing(s: Session, ev: DomainEvent) -> None:
+    enqueue(s, "selection.optimize", {"candidate_id": ev.entity_id}, dedupe_key=f"selection.optimize:{ev.entity_id}")
+
+
+@job_handler("selection.optimize")
+def selection_optimize(ctx: JobContext, p: dict[str, Any]) -> None:
+    """店主确认「优化后再观察」：运营智能体只诊断这一款，给出的建议照常走拍板；同时开始 optimize_days 天的再观察。"""
+    s = ctx.session
+    cand = s.get(Candidate, p["candidate_id"])
+    tr = s.scalar(select(TestRun).where(TestRun.candidate_id == cand.id).order_by(TestRun.id.desc()))
+    cfg = get_settings().rules
+    day = queries.business_day(s)
+    out = ops.diagnose(ctx.runner, s, day, goods_id=tr.goods_id)
+    shop, title = _shop(s), s.get(Offer, cand.offer_id).title
+    sugs = []
+    for x in out.suggestions[: cfg["ops"]["max_suggestions_per_report"]]:
+        sug = Suggestion(shop_id=shop.id, goods_id=x.goods_id, day=day, type=x.type, action=x.action,
+                         reason=f"{x.reason}（测款优化：候选 #{cand.id}）", evidence=x.evidence, confidence=x.confidence,
+                         needs_write=x.needs_write)
+        s.add(sug)
+        s.flush()
+        transition(s, "suggestion", sug.id, "report", ceo.CEO, {"candidate_id": cand.id})
+        sugs.append(sug)
+    days = cfg["selection"]["test_run"]["optimize_days"]
+    s.add(TestRun(candidate_id=cand.id, goods_id=tr.goods_id, start_date=day + timedelta(days=1), days=days,
+                  trial_round=tr.trial_round + 1))
+    transition(s, "candidate", cand.id, "retest", SYSTEM)
+    if sugs:
+        send_card(s, ctx.services, cards.suggestions(f"测款优化 · {title}（拍板后执行，再观察 {days} 天）", sugs),
+                  "suggestion", sugs[0].id, also=[("suggestion", x.id) for x in sugs[1:]])
+    else:
+        send_card(s, ctx.services, cards.notice(f"测款优化 · {title}",
+                                                f"运营智能体没有发现明确的问题（{out.summary}），继续观察 {days} 天后再给结论。",
+                                                "purple"), "candidate", cand.id)

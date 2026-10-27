@@ -7,7 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import update
+from sqlalchemy import delete, select, update
+
+from app.config import get_settings
 
 from app.db import runs_scope, utcnow
 from app.models import AgentRun, AgentRunStep
@@ -86,3 +88,17 @@ def recover_stale_runs(timeout: timedelta = timedelta(minutes=30)) -> int:
         res = rs.execute(update(AgentRun).where(AgentRun.status == "running", AgentRun.started_at < utcnow() - timeout)
                          .values(status="failed", finished_at=utcnow(), error="worker 重启，运行中断"))
         return res.rowcount or 0
+
+
+def purge_old_runs() -> tuple[int, int]:
+    """按 adhoc.run_retention_days / step_retention_days 清理运行记录；运行中的不动。返回（删除的运行数, 步骤数）。"""
+    conf = get_settings().adhoc
+    now = utcnow()
+    with runs_scope() as rs:
+        old_runs = select(AgentRun.id).where(AgentRun.status != "running",
+                                             AgentRun.started_at < now - timedelta(days=conf["run_retention_days"]))
+        n_steps = rs.execute(delete(AgentRunStep).where(
+            AgentRunStep.run_id.in_(old_runs) | (AgentRunStep.at < now - timedelta(days=conf["step_retention_days"])))
+        ).rowcount or 0
+        n_runs = rs.execute(delete(AgentRun).where(AgentRun.id.in_(old_runs))).rowcount or 0
+        return n_runs, n_steps

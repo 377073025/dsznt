@@ -133,6 +133,7 @@ class Candidate(Base, TimestampMixin):
     risks: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(16), default="discovered")
     reject_reason: Mapped[str] = mapped_column(Text, default="")
+    revise_rounds: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class TestRun(Base, TimestampMixin):
@@ -142,6 +143,8 @@ class TestRun(Base, TimestampMixin):
     candidate_id: Mapped[int] = mapped_column(ForeignKey("candidate.id"))
     goods_id: Mapped[str] = mapped_column(String(64))
     start_date: Mapped[date] = mapped_column(Date)
+    days: Mapped[int] = mapped_column(Integer, default=14)
+    trial_round: Mapped[int] = mapped_column(Integer, default=1)  # 2 = 优化后的再观察
     visitors: Mapped[int] = mapped_column(Integer, default=0)
     cvr: Mapped[float] = mapped_column(Float, default=0.0)
     verdict: Mapped[str] = mapped_column(String(16), default="")  # keep / optimize / drop

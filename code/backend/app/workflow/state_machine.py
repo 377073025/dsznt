@@ -76,6 +76,7 @@ TRANSITIONS: dict[tuple[str, str, str], Transition] = {
     ("candidate", "testing", "keep"): _t("kept", OWNER),
     ("candidate", "testing", "optimize"): _t("optimizing", OWNER),
     ("candidate", "testing", "drop"): _t("delisted", OWNER),
+    ("candidate", "optimizing", "retest"): _t("testing", *MACHINE),  # 运营优化后再观察 7 天
     # 任务
     ("task", "pending", "start"): _t("running", *MACHINE),
     ("task", "running", "produce"): _t("produced", *MACHINE),

@@ -11,16 +11,16 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import ceo
+from app.agents import ceo, selection
 from app.data import queries
 from app.data.channels import manual_import
-from app.interfaces.feishu import cards
+from app.interfaces.feishu import adhoc_commands, cards
 from app.interfaces.feishu.handler import get_or_register
 from app.interfaces.feishu.notify import remember_chat, send_card
 from app.models import Capability, Candidate, FetchJob, Offer, Report, Shop, Suggestion, User
 from app.services import Services
 from app.workflow.jobs import JobContext, job_handler
-from app.workflow.state_machine import transition
+from app.workflow.state_machine import MODELS, transition
 
 HELP = (
     "可以直接跟我说：\n"
@@ -54,9 +54,15 @@ def handle_message(ctx: JobContext, p: dict[str, Any]) -> None:
     if command:
         command(s, services, chat_id)
         return
+    reply = adhoc_commands.handle(s, services, user, text)
+    if reply is not None:
+        _reply(services, chat_id, reply)
+        return
     pending = _pending_revise(s) if user.role == "owner" else None
     if pending is not None:
-        _on_revise(ctx, chat_id, pending, text)
+        refused = revise(ctx, pending, text)
+        if refused:
+            _reply(services, chat_id, refused)
         return
     _on_chat(ctx, user, chat_id, text)
 
@@ -76,17 +82,41 @@ def _on_file(s: Session, services: Services, user: User, chat_id: str, p: dict[s
         _reply(services, chat_id, f"文件里有数据不对，没有导入：{rows}")
 
 
-def _pending_revise(s: Session) -> Suggestion | None:
-    return s.scalar(select(Suggestion).where(Suggestion.status == "revising").order_by(Suggestion.updated_at.desc()))
+def _pending_revise(s: Session) -> Suggestion | Candidate | None:
+    """最近一次点了「改一改」的建议或候选：店主接下来的回复就是修改意见。"""
+    found = [x for x in (
+        s.scalar(select(Suggestion).where(Suggestion.status == "revising").order_by(Suggestion.updated_at.desc())),
+        s.scalar(select(Candidate).where(Candidate.status == "revising").order_by(Candidate.updated_at.desc())),
+    ) if x is not None]
+    return max(found, key=lambda x: x.updated_at) if found else None
 
 
-def _on_revise(ctx: JobContext, chat_id: str, sug: Suggestion, text: str) -> None:
+def revise(ctx: JobContext, obj: Suggestion | Candidate, text: str) -> str:
+    """按修改意见改写并发新卡片；超过轮数时返回提示文字（不改）。飞书回复与 Web 的「改一改」都走这里。"""
     s, services = ctx.session, ctx.services
-    if sug.revise_rounds >= ceo.MAX_REVISE_ROUNDS:
-        _reply(services, chat_id, f"建议 #{sug.id} 已经改了 {sug.revise_rounds} 轮，请在 Web 控制台直接编辑后提交。")
-        return
-    sug = ceo.revise(ctx.runner, s, sug.id, text)
-    send_card(s, services, cards.suggestions(f"修改后的建议（第 {sug.revise_rounds} 轮）", [sug]), "suggestion", sug.id)
+    if obj.revise_rounds >= ceo.MAX_REVISE_ROUNDS:
+        what = "建议" if isinstance(obj, Suggestion) else "候选"
+        return f"{what} #{obj.id} 已经改了 {obj.revise_rounds} 轮，请在 Web 控制台直接处理。"
+    if isinstance(obj, Suggestion):
+        sug = ceo.revise(ctx.runner, s, obj.id, text)
+        send_card(s, services, cards.suggestions(f"修改后的建议（第 {sug.revise_rounds} 轮）", [sug]), "suggestion", sug.id)
+    else:
+        cand = selection.revise_candidate(ctx.runner, s, services, obj.id, text)
+        title = s.get(Offer, cand.offer_id).title
+        send_card(s, services, cards.selection_weekly(f"修改后的候选（第 {cand.revise_rounds} 轮）", [cand],
+                                                      {cand.offer_id: title}), "candidate", cand.id)
+    return ""
+
+
+@job_handler("revise.run")
+def _revise_run(ctx: JobContext, p: dict[str, Any]) -> None:
+    """Web 上提交的「改一改」：先由 card.apply 把状态改成 revising，再按意见改写。"""
+    obj = ctx.session.get(MODELS[p["entity"]], p["id"])
+    if obj is None or obj.status != "revising":
+        raise RuntimeError(f"{p['entity']} #{p['id']} 不在待修改状态")
+    refused = revise(ctx, obj, p["feedback"])
+    if refused:
+        raise RuntimeError(refused)
 
 
 def _on_chat(ctx: JobContext, user: User, chat_id: str, text: str) -> None:
@@ -106,7 +136,7 @@ def _on_chat(ctx: JobContext, user: User, chat_id: str, text: str) -> None:
 # ---------- 固定指令（不调用模型） ----------
 
 def _cmd_help(s: Session, services: Services, chat_id: str) -> None:
-    _reply(services, chat_id, HELP)
+    _reply(services, chat_id, HELP + "\n\n" + adhoc_commands.HELP)
 
 
 def _cmd_report(s: Session, services: Services, chat_id: str) -> None:

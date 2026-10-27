@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.adapters.llm.base import LLMRequest, LLMResult
 from app.agents.facts import FactTable, check_numbers
 from app.agents.runtime import AgentRunner, AgentSpec
 from app.config import get_settings
@@ -89,14 +90,21 @@ def build_input(s: Session, day: date, days: int = 7, goods_id: str = "") -> tup
     return content, facts, {"goods": goods_ctx, "day": day.isoformat()}
 
 
-def diagnose(runner: AgentRunner, s: Session, day: date, goods_id: str = "", days: int = 7) -> OpsDiagnosis:
-    """能力「运营 · 诊断」：只读，不写建议表。"""
+def diagnose(runner: AgentRunner, s: Session, day: date, goods_id: str = "", days: int = 7,
+             first: LLMResult | None = None) -> OpsDiagnosis:
+    """能力「运营 · 诊断」：只读，不写建议表。first 为 Batch 已返回的第 1 轮结果。"""
     content, facts, ctx = build_input(s, day, days, goods_id)
-    return runner.run(SPEC, content, facts=facts, context=ctx)
+    return runner.run(SPEC, content, facts=facts, context=ctx, first=first)
 
 
-def run(runner: AgentRunner, s: Session, shop: Shop, day: date) -> list[Suggestion]:
-    out = diagnose(runner, s, day)
+def diagnose_request(runner: AgentRunner, s: Session, day: date) -> LLMRequest:
+    """每日整店诊断的第 1 轮请求，提交 Batch 用。"""
+    content, facts, ctx = build_input(s, day)
+    return runner.first_request(SPEC, content, facts, ctx)
+
+
+def run(runner: AgentRunner, s: Session, shop: Shop, day: date, first: LLMResult | None = None) -> list[Suggestion]:
+    out = diagnose(runner, s, day, first=first)
     limit = get_settings().rules["ops"]["max_suggestions_per_report"]
     created = []
     for x in out.suggestions[:limit]:

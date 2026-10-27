@@ -13,12 +13,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app import capabilities as caps
+from app.backup import run_backup
 from app.bootstrap import init
 from app.config import get_settings
 from app.db import session_scope, utcnow
 from app.llm.gateway import Gateway
 from app.services import get_services
-from app.agents.tracking import recover_stale_runs
+from app.agents.tracking import purge_old_runs, recover_stale_runs
 from app.workflow.jobs import enqueue, recover_stale, run_until_idle
 
 log = logging.getLogger("worker")
@@ -45,6 +46,24 @@ def _enqueue_selection_weekly() -> None:
 def _enqueue_timeouts() -> None:
     with session_scope() as s:
         enqueue(s, "system.timeouts", {})
+        enqueue(s, "system.budget_check", {})
+
+
+def _enqueue_system_report() -> None:
+    end = _today_cn()
+    with session_scope() as s:
+        enqueue(s, "system.weekly_report", {"end": end.isoformat()}, dedupe_key=f"system.weekly_report:{end.isoformat()}")
+
+
+def _backup() -> None:
+    """在调度器线程里直接跑（不占作业通道）；失败时通过作业发飞书通知。"""
+    try:
+        out = run_backup()
+        log.info("backup done: %s", out)
+    except Exception as e:  # noqa: BLE001
+        log.exception("backup failed")
+        with session_scope() as s:
+            enqueue(s, "system.notify", {"title": "备份失败", "body": f"{type(e).__name__}: {e}"})
 
 
 def _health_check() -> None:
@@ -52,6 +71,12 @@ def _health_check() -> None:
     with session_scope() as s:
         for key, before, after in caps.run_health_checks(s, services.health_checks()):
             log.warning("capability %s: %s → %s", key, before, after)
+
+
+def _purge_runs() -> None:
+    n_runs, n_steps = purge_old_runs()
+    if n_runs or n_steps:
+        log.info("purged %s agent runs, %s steps", n_runs, n_steps)
 
 
 def build_scheduler() -> BackgroundScheduler:
@@ -62,11 +87,14 @@ def build_scheduler() -> BackgroundScheduler:
     sched.add_job(_enqueue_selection_weekly, CronTrigger.from_crontab(conf["selection_weekly"], timezone=tz), id="selection")
     sched.add_job(_health_check, "interval", minutes=conf["health_check_minutes"], id="health")
     sched.add_job(_enqueue_timeouts, "interval", minutes=30, id="timeouts")
+    sched.add_job(_backup, CronTrigger.from_crontab(conf["backup"], timezone=tz), id="backup")
+    sched.add_job(_enqueue_system_report, CronTrigger.from_crontab(conf["system_report"], timezone=tz), id="system_report")
+    sched.add_job(_purge_runs, CronTrigger.from_crontab(conf["purge_runs"], timezone=tz), id="purge_runs")
     return sched
 
 
 def main() -> None:
-    init()
+    init(process="worker")
     recovered = recover_stale()
     if recovered:
         log.info("recovered %s stale jobs", recovered)

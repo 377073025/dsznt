@@ -34,7 +34,14 @@ class RecommendOut(BaseModel):
     risks: list[str]
 
 
+class ComplianceOut(BaseModel):
+    passed: bool
+    risk_level: str      # low / medium / high
+    issues: list[str]    # 具体问题，例如「标题含品牌词」「图片疑似盗用品牌官方图」
+
+
 SAME = AgentSpec(name="selection.same_product", model_role="light", output=SameProductOut)
+COMPLIANCE = AgentSpec(name="selection.compliance", model_role="main", output=ComplianceOut)
 RECOMMEND = AgentSpec(name="selection.recommend", model_role="main", output=RecommendOut)
 
 
@@ -71,11 +78,49 @@ def find_demands(s: Session, services: Services, week: str, category: str, keywo
     return out
 
 
+def find_extensions(s: Session, services: Services, week: str, category: str) -> list[tuple[str, DemandDraft]]:
+    """延伸选品（04 号文档 3.2 节）：店内最好卖的款 → 同系列、不和本店商品重复的热词（不卡趋势门槛）。
+
+    返回 (好卖款 goods_id, 需求)。同供应商的关联款需要 1688 店铺商品接口，接入 alibaba_api 后补充。
+    """
+    from app.data import queries
+    from app.rules.metrics import classify, compare
+
+    if services.market is None or not caps.is_healthy(s, "market_tool"):
+        return []
+    day = queries.business_day(s)
+    rows = queries.day_rows(s, day, 14)
+    products = {p.goods_id: p for p in queries.products(s)}
+    if not rows or not products:
+        return []
+    best = classify([compare(rows, g, day) for g in products])["best"]
+    own = [p.name for p in products.values()]
+    ranking = services.market.category_ranking(category, week)
+    out, seen = [], set()
+    for gid in best:
+        series = products[gid].series or category
+        for kw in services.market.hot_keywords(category, week):
+            if kw.keyword in seen or series not in kw.keyword or kw.trend < 0 \
+                    or any(kw.keyword in n or n in kw.keyword for n in own):
+                continue
+            seen.add(kw.keyword)
+            matched = [r for r in ranking if kw.keyword in r.title] or ranking[:1]
+            out.append((gid, DemandDraft(keyword=kw.keyword, heat=kw.heat, trend=kw.trend, competition=kw.competition,
+                                         competitors=[{**r.model_dump(), "competition": kw.competition} for r in matched])))
+    return out
+
+
 def scout_demands(s: Session, services: Services, week: str, category: str) -> list[Demand]:
-    """机会选品：需求侦察结果写入需求表。市场工具不可用时，后续改用拼多多前台网页读取。"""
-    out = []
+    """需求清单：延伸选品（店内好卖款的同系列）+ 机会选品（热度上升的词）；同一个词只算一次，延伸优先。
+    市场工具不可用时，后续改用拼多多前台网页读取。"""
+    drafts: dict[str, tuple[str, str, DemandDraft]] = {}
+    for gid, d in find_extensions(s, services, week, category):
+        drafts[d.keyword] = ("extension", gid, d)
     for d in find_demands(s, services, week, category):
-        demand = Demand(week=week, keyword=d.keyword, seed_type="opportunity", heat=d.heat, trend=d.trend,
+        drafts.setdefault(d.keyword, ("opportunity", "", d))
+    out = []
+    for seed_type, seed_ref, d in drafts.values():
+        demand = Demand(week=week, keyword=d.keyword, seed_type=seed_type, seed_ref=seed_ref, heat=d.heat, trend=d.trend,
                         competitors=d.competitors)
         s.add(demand)
         s.flush()
@@ -88,6 +133,21 @@ def check_same(runner: AgentRunner, competitor_title: str, offer_title: str) -> 
                       context={"competitor": competitor_title, "offer": offer_title})
 
 
+def check_compliance(runner: AgentRunner, detail: OfferDetail) -> ComplianceOut:
+    """商品风险（品牌 / IP 侵权、盗图、描述夸大）：品牌词库命中直接不通过，不调模型；否则交模型看标题与图片。"""
+    cfg = get_settings().rules["selection"]["compliance"]
+    text = f"{detail.title} {detail.category}".lower()
+    hits = [w for w in cfg["brand_words"] if w.lower() in text]
+    if hits:
+        return ComplianceOut(passed=False, risk_level="high", issues=[f"标题含品牌 / IP 词：{'、'.join(hits)}"])
+    if not cfg.get("llm_review", True):
+        return ComplianceOut(passed=True, risk_level="low", issues=[])
+    return runner.run(COMPLIANCE, (
+        f"请审查这个 1688 货源能否在拼多多上架（只看商品风险：品牌或 IP 侵权、外观专利、盗用他人图片、描述夸大）。\n"
+        f"标题：{detail.title}\n类目：{detail.category}\n图片：{'、'.join(detail.image_urls) or '无'}"
+    ), context={"title": detail.title, "category": detail.category, "images": detail.image_urls})
+
+
 def price_plan(sell_price_fen: int, detail: OfferDetail) -> dict:
     p = R.profit(sell_price_fen, detail, get_settings().rules["selection"]["profit"])
     return {"sell_price_fen": sell_price_fen, "cost_fen": p.cost_fen, "shipping_fen": p.shipping_fen,
@@ -95,11 +155,12 @@ def price_plan(sell_price_fen: int, detail: OfferDetail) -> dict:
 
 
 def score_offer(services: Services, detail: OfferDetail, sell_price_fen: int, heat: float, trend: float,
-                competition: float) -> tuple[float, dict]:
+                competition: float, fit: float = 0.9) -> tuple[float, dict]:
+    """fit：与店铺契合度，延伸选品（店内好卖款的同系列）给满分。"""
     rules = get_settings().rules["selection"]
     p = R.profit(sell_price_fen, detail, rules["profit"])
     auto = services.dropship.check_auto_order(detail.offer_id).supported if services.dropship else None
-    return R.score(detail, p, heat, trend, competition, auto, fit=0.9, assets=0.6, weights=rules["score_weights"])
+    return R.score(detail, p, heat, trend, competition, auto, fit=fit, assets=0.6, weights=rules["score_weights"])
 
 
 def write_recommendation(runner: AgentRunner, offer_title: str, supplier_years: int, ship_48h_rate: float,
@@ -139,6 +200,7 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
     if source is None:
         return []
     recommended: list[tuple[float, Candidate]] = []
+    verified: dict[int, list[tuple[float, str]]] = {}  # 需求 → 通过过滤与同款审查的货源，作推荐款的备选货源
     for demand in scout_demands(s, services, week, category):
         competitor = demand.competitors[0]
         sell_price = competitor["price_fen"]
@@ -161,12 +223,20 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
                 cand.reject_reason = "同款置信度不足：" + "；".join(same.concerns)
                 transition(s, "candidate", cand.id, "drop", SELECTOR)
                 continue
+            comp = check_compliance(runner, detail)
+            cand.compliance = comp.model_dump()
+            if not comp.passed:
+                cand.reject_reason = "合规审查未通过：" + "；".join(comp.issues)
+                transition(s, "candidate", cand.id, "drop", SELECTOR)
+                continue
             transition(s, "candidate", cand.id, "verify", SELECTOR)
 
             total, breakdown = score_offer(services, detail, sell_price, demand.heat, demand.trend,
-                                           competitor.get("competition", 0.5))
+                                           competitor.get("competition", 0.5),
+                                           fit=1.0 if demand.seed_type == "extension" else 0.9)
             cand.score, cand.breakdown = total, breakdown
             cand.price_plan = price_plan(sell_price, detail)
+            verified.setdefault(demand.id, []).append((total, detail.offer_id))
             transition(s, "candidate", cand.id, "score", SELECTOR)
             if total < rules["candidate_min_score"]:
                 cand.reject_reason = f"得分 {total} 低于 {rules['candidate_min_score']}"
@@ -181,10 +251,60 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
         demand = s.get(Demand, cand.demand_id)
         rec = write_recommendation(runner, offer.title, offer.supplier_years, offer.ship_48h_rate,
                                    demand.keyword, demand.trend, cand.price_plan, total)
-        cand.reason, cand.risks = rec.reason, rec.risks
+        cand.reason, cand.risks = rec.reason, [*rec.risks, *cand.compliance.get("issues", [])]
+        cand.backup_offer_ids = [o for _, o in sorted(verified.get(cand.demand_id, []), reverse=True) if o != cand.offer_id]
         transition(s, "candidate", cand.id, "recommend", SELECTOR)
         out.append(cand)
     return out
+
+
+# ---------- 改一改 ----------
+
+class CandidateRevision(BaseModel):
+    sell_price_yuan: float  # 店主要求的新售价（元）；0 表示不改售价
+    switch_offer: bool      # 是否换成备选货源
+    note: str               # 一句话说明怎么理解店主的意见
+
+
+REVISE = AgentSpec(name="selection.revise", model_role="main", output=CandidateRevision)
+
+
+def revise_candidate(runner: AgentRunner, s: Session, services: Services, cand_id: int, feedback: str) -> Candidate:
+    """候选「改一改」：模型只负责理解意见（改售价 / 换货源）；利润、打分、过滤由程序重算，推荐理由重写。改完回到「已推荐」等拍板。"""
+    cand = s.get(Candidate, cand_id)
+    assert cand is not None and cand.status == "revising"
+    demand = s.get(Demand, cand.demand_id)
+    sell = cand.price_plan.get("sell_price_fen", 0)
+    out = runner.run(REVISE, (
+        f"店主对这款选品候选提出了修改意见，请判断要改什么。\n候选：{s.get(Offer, cand.offer_id).title}；当前售价 {sell / 100:.2f} 元；"
+        f"备选货源 {len(cand.backup_offer_ids)} 个\n店主意见：{feedback}\n"
+        "只能改两件事：售价（sell_price_yuan，不改填 0）、换成备选货源（switch_offer）。其余意见写在 note 里。"
+    ), context={"feedback": feedback, "sell_price_yuan": sell / 100, "backups": cand.backup_offer_ids})
+
+    notes = []
+    if out.sell_price_yuan > 0:
+        sell = round(out.sell_price_yuan * 100)
+    if out.switch_offer:
+        if cand.backup_offer_ids:
+            new_id, *rest = cand.backup_offer_ids
+            cand.backup_offer_ids, cand.offer_id = [*rest, cand.offer_id], new_id
+        else:
+            notes.append("没有可换的备选货源，仍用原货源")
+    offer = s.get(Offer, cand.offer_id)
+    detail = OfferDetail.model_validate(offer.raw)
+    comp = demand.competitors[0] if demand.competitors else {}
+    cand.price_plan = price_plan(sell, detail)
+    cand.score, cand.breakdown = score_offer(services, detail, sell, demand.heat, demand.trend,
+                                             comp.get("competition", 0.5), fit=1.0 if demand.seed_type == "extension" else 0.9)
+    rules = get_settings().rules["selection"]
+    reasons = R.hard_filter(detail, sell, rules["hard_filters"], rules["profit"])
+    rec = write_recommendation(runner, offer.title, offer.supplier_years, offer.ship_48h_rate, demand.keyword,
+                               demand.trend, cand.price_plan, cand.score)
+    cand.reason = rec.reason
+    cand.risks = [*(f"未通过硬性过滤：{r}" for r in reasons), *notes, *rec.risks]
+    cand.revise_rounds += 1
+    transition(s, "candidate", cand.id, "recommend", SELECTOR, {"feedback": feedback, "note": out.note})
+    return cand
 
 
 def recommended_this_week(s: Session, week: str) -> list[Candidate]:

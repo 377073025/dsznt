@@ -91,6 +91,50 @@ def create_all() -> None:
 
     Base.metadata.create_all(get_engine())
     RunBase.metadata.create_all(_runs_engine)
+    _add_missing_columns(get_engine(), Base.metadata)
+    _add_missing_columns(_runs_engine, RunBase.metadata)
+
+
+def _literal(col) -> str | None:
+    """新列的默认值写成 SQL 字面量；拿不到时返回 None（列允许为空）。"""
+    d = col.default.arg if col.default is not None else None
+    if callable(d):
+        d = {list: [], dict: {}}.get(d)
+        if d is None:
+            return None
+    if isinstance(d, bool):
+        return "1" if d else "0"
+    if isinstance(d, (int, float)):
+        return str(d)
+    if isinstance(d, str):
+        return "'" + d.replace("'", "''") + "'"
+    if isinstance(d, (list, dict)):
+        import json
+
+        return "'" + json.dumps(d) + "'"
+    return None
+
+
+def _add_missing_columns(engine: Engine, metadata) -> None:
+    """SQLite 的轻量迁移：表已存在但缺少后来新增的列时补上（只加列，不改不删）。PostgreSQL 时改用正式迁移工具。"""
+    if engine.dialect.name != "sqlite":
+        return
+    from sqlalchemy import inspect
+
+    with engine.begin() as conn:
+        insp = inspect(conn)
+        for table in metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                lit = _literal(col)
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col.type.compile(engine.dialect)}'
+                if lit is not None:
+                    ddl += f" NOT NULL DEFAULT {lit}" if not col.nullable else f" DEFAULT {lit}"
+                conn.exec_driver_sql(ddl)
 
 
 def get_engine() -> Engine:

@@ -113,9 +113,11 @@ def scout(ctx: CapContext, p: ScoutParams) -> ScoutOut:
 
 
 class FindSourceParams(BaseModel):
-    keyword: str = Field(description="要找货源的商品，例如 葡萄柚香薰蜡烛")
-    competitor_url: str = Field("", description="拼多多竞品链接（可选，用来取售价和同款比对）")
-    sell_price_fen: int = Field(0, description="目标售价（分）；没有竞品链接时必填")
+    keyword: str = Field("", description="要找货源的商品，例如 葡萄柚香薰蜡烛")
+    competitor_url: str = Field("", description="拼多多竞品链接（可选，用来取售价、主图和同款比对）")
+    goods_id: str = Field("", description="本店商品 ID（可选）：按它的主图以图搜同款，用于换货源 / 补位选品")
+    image_url: str = Field("", description="图片地址（可选）：以图搜货")
+    sell_price_fen: int = Field(0, description="目标售价（分）；没有竞品链接或本店商品时必填")
     limit: int = Field(10, ge=1, le=20)
 
 
@@ -128,6 +130,7 @@ class OfferVerdict(BaseModel):
     same_product: bool | None = None
     same_confidence: float = 0.0
     concerns: list[str] = []
+    compliance_issues: list[str] = []
 
 
 class FindSourceOut(BaseModel):
@@ -136,19 +139,33 @@ class FindSourceOut(BaseModel):
     offers: list[OfferVerdict]
 
 
-@capability("selection.find_source", "找货源", "按商品找 1688 货源，给出硬性过滤与同款结论。", FindSourceParams,
-            needs=(_LLM, _SOURCING), uses_web={"alibaba"})
+@capability("selection.find_source", "找货源",
+            "按商品名、竞品链接、本店商品或图片找 1688 货源（有图时以图搜货），给出硬性过滤、同款与合规结论。",
+            FindSourceParams, needs=(_LLM, _SOURCING), uses_web={"alibaba"})
 def find_source(ctx: CapContext, p: FindSourceParams) -> FindSourceOut:
     rules = get_settings().rules["selection"]
-    title, price = p.keyword, p.sell_price_fen
+    title, price, image, exclude = p.keyword, p.sell_price_fen, p.image_url, ""
+    if p.goods_id:
+        prod = ctx.session.scalar(select(Product).where(Product.goods_id == p.goods_id))
+        if prod is None:
+            raise ValueError(f"商品 {p.goods_id} 不存在")
+        title, price = prod.name, price or prod.price_fen
+        image, exclude = image or f"{prod.main_image_hash}.jpg", prod.source_offer_id  # 换货源时排除当前货源
     if p.competitor_url and ctx.services.market is not None:
         comp = ctx.services.market.competitor_goods(p.competitor_url)
-        title, price = comp.title, price or comp.price_fen
+        title, price, image = comp.title, price or comp.price_fen, image or comp.image_url
+    if not (p.keyword or image):
+        raise ValueError("请给出商品名、竞品链接、本店商品或图片")
     if price <= 0:
-        raise ValueError("请给出目标售价或竞品链接")
+        raise ValueError("请给出目标售价、竞品链接或本店商品")
     src = _source(ctx)
-    out = []
-    for brief in src.search_by_keyword(p.keyword, OfferFilter(), limit=p.limit):
+    briefs = (src.search_by_image(Path(image), limit=p.limit) if image else []) + \
+        (src.search_by_keyword(p.keyword, OfferFilter(), limit=p.limit) if p.keyword else [])
+    out, seen = [], {exclude}
+    for brief in briefs:
+        if brief.offer_id in seen:
+            continue
+        seen.add(brief.offer_id)
         d = src.offer_detail(brief.offer_id)
         reasons = R.hard_filter(d, price, rules["hard_filters"], rules["profit"])
         v = OfferVerdict(offer_id=d.offer_id, title=d.title, price_fen=d.price_fen, passed=not reasons, reject_reasons=reasons)
@@ -156,8 +173,11 @@ def find_source(ctx: CapContext, p: FindSourceParams) -> FindSourceOut:
             same = selection.check_same(ctx.runner, title, d.title)
             v.same_product, v.same_confidence, v.concerns = same.same_product, same.confidence, same.concerns
             v.passed = same.same_product and same.confidence >= selection.SAME_PRODUCT_MIN_CONF
+        if v.passed:
+            comp_out = selection.check_compliance(ctx.runner, d)
+            v.passed, v.compliance_issues = comp_out.passed, comp_out.issues
         out.append(v)
-    return FindSourceOut(competitor_title=title, sell_price_fen=price, offers=out)
+    return FindSourceOut(competitor_title=title, sell_price_fen=price, offers=out[: p.limit])
 
 
 class EvaluateParams(BaseModel):
@@ -195,6 +215,10 @@ def evaluate_offer(ctx: CapContext, p: EvaluateParams) -> EvaluateOut:
                       heat=p.heat, trend=p.trend, offer=d.model_dump(mode="json"),
                       reject_reasons=R.hard_filter(d, p.sell_price_fen, rules["hard_filters"], rules["profit"]))
     if out.reject_reasons:
+        return out
+    comp = selection.check_compliance(ctx.runner, d)
+    if not comp.passed:
+        out.reject_reasons = ["合规审查未通过：" + "；".join(comp.issues)]
         return out
     out.score, out.breakdown = selection.score_offer(ctx.services, d, p.sell_price_fen, p.heat, p.trend, p.competition)
     if out.score < rules["candidate_min_score"]:
@@ -312,27 +336,44 @@ def write_copy(ctx: CapContext, p: CopyParams) -> executors.CopyOut:
                           context={"goods_id": p.goods_id, "name": name})
 
 
+IMAGE_MODES = {"replace_background": "换背景", "remove_background": "抠白底", "compose_scene": "合成场景图"}
+
+
 class ImageParams(BaseModel):
     goods_id: str
-    instruction: str = Field(description="要求，例如 换成卧室场景背景")
+    instruction: str = Field("", description="要求，例如 换成卧室场景背景")
+    mode: Literal["replace_background", "remove_background", "compose_scene"] = Field(
+        "replace_background", description="replace_background 换背景 / remove_background 抠白底 / compose_scene 合成场景图")
 
 
 class ImageOut(BaseModel):
     goods_id: str
     path: str
     instruction: str
+    mode: str = "replace_background"
+    source: str = ""  # 原图
 
 
-@capability("exec.image", "修图", "生成主图新版本草稿（不换店铺主图）。", ImageParams, needs=(("image_gen",),),
-            promote_to="suggestion")
+@capability("exec.image", "修图", "生成主图新版本草稿（不换店铺主图）。不生成商品本体，只处理背景与场景。", ImageParams,
+            needs=(("image_gen",),), promote_to="suggestion")
 def edit_image(ctx: CapContext, p: ImageParams) -> ImageOut:
     prod = ctx.session.scalar(select(Product).where(Product.goods_id == p.goods_id))
     if prod is None:
         raise ValueError(f"商品 {p.goods_id} 不存在")
     if ctx.services.image_gen is None:
         raise RuntimeError("生图服务未接入（能力 image_gen）")
-    new = ctx.services.image_gen.replace_background(Path(f"{prod.main_image_hash}.jpg"), p.instruction)
-    return ImageOut(goods_id=p.goods_id, path=str(new), instruction=p.instruction)
+    if p.mode != "remove_background" and not p.instruction:
+        raise ValueError("请写明要求，例如 换成卧室场景背景")
+    src = Path(f"{prod.main_image_hash}.jpg")
+    gen = ctx.services.image_gen
+    if p.mode == "remove_background":
+        new = gen.remove_background(src)
+    elif p.mode == "compose_scene":
+        new = gen.compose_scene(src, p.instruction, None)
+    else:
+        new = gen.replace_background(src, p.instruction)
+    return ImageOut(goods_id=p.goods_id, path=str(new), instruction=p.instruction or IMAGE_MODES[p.mode], mode=p.mode,
+                    source=str(src))
 
 
 class ListingParams(BaseModel):
@@ -344,11 +385,21 @@ class ListingParams(BaseModel):
 class ListingOut(BaseModel):
     package: dict
     selling_points: list[str]
+    # 以下由程序计算，转为候选时用
+    offer_id: str = ""
+    title: str = ""
+    keyword: str = ""
+    price_plan: dict = {}
+    score: float = 0.0
+    breakdown: dict = {}
+    reject_reasons: list[str] = []
+    offer: dict = {}
 
 
-@capability("exec.listing", "打包上架物料", "生成上架物料包草稿（不推送铺货工具）。", ListingParams,
-            needs=(_LLM, _SOURCING), uses_web={"alibaba"})
+@capability("exec.listing", "打包上架物料", "生成上架物料包草稿（不推送铺货工具）；通过硬性过滤的可转为选品候选。",
+            ListingParams, needs=(_LLM, _SOURCING), uses_web={"alibaba"}, promote_to="candidate")
 def listing_package(ctx: CapContext, p: ListingParams) -> ListingOut:
+    rules = get_settings().rules["selection"]
     d: OfferDetail = _source(ctx).offer_detail(_offer_id(p.offer))
     copy = ctx.runner.run(executors.COPY, f"为 1688 货源「{d.title}」写拼多多上新标题与卖点，核心需求词：{p.keyword}",
                           context={"goods_id": d.offer_id, "name": p.keyword})
@@ -363,7 +414,11 @@ def listing_package(ctx: CapContext, p: ListingParams) -> ListingOut:
     path = out_dir / f"adhoc_{d.offer_id}.json"
     path.write_text(pkg.model_dump_json(indent=2), encoding="utf-8")
     pkg.path = str(path)
-    return ListingOut(package=pkg.model_dump(), selling_points=copy.selling_points)
+    score, breakdown = selection.score_offer(ctx.services, d, p.sell_price_fen, 0.0, 0.0, 0.5)
+    return ListingOut(package=pkg.model_dump(), selling_points=copy.selling_points, offer_id=d.offer_id, title=d.title,
+                      keyword=p.keyword, price_plan=selection.price_plan(p.sell_price_fen, d), score=score,
+                      breakdown=breakdown, offer=d.model_dump(mode="json"),
+                      reject_reasons=R.hard_filter(d, p.sell_price_fen, rules["hard_filters"], rules["profit"]))
 
 
 def missing_capabilities(s: Session, cap: AgentCapability) -> list[str]:

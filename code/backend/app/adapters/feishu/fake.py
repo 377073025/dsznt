@@ -24,5 +24,15 @@ class FakeFeishu:
         self.sent.append({"message_id": mid, "chat_id": chat_id, "text": text})
         return mid
 
+    def send_card_to_user(self, open_id: str, card: dict) -> str:
+        mid = f"om_fake_{len(self.sent) + 1}"
+        self.sent.append({"message_id": mid, "open_id": open_id, "card": card})
+        return mid
+
+    def send_text_to_user(self, open_id: str, text: str) -> str:
+        mid = f"om_fake_{len(self.sent) + 1}"
+        self.sent.append({"message_id": mid, "open_id": open_id, "text": text})
+        return mid
+
     def download_file(self, message_id: str, file_key: str) -> Path:
         return self.files[file_key]

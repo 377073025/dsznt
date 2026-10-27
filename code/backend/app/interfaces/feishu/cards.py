@@ -76,10 +76,13 @@ def selection_weekly(week: str, cands: list[Candidate], titles: dict[str, str]) 
 TRIAL_LABEL = {"keep": "留款", "optimize": "优化后再观察", "drop": "下架"}
 
 
-def trial_result(cand: Candidate, title: str, visitors: int, cvr: float, shop_cvr: float, verdict: str, days: int) -> dict[str, Any]:
-    body = (f"**{title}** 测款 {days} 天\n访客 {visitors} · 转化率 {cvr:.1%} · 店铺平均 {shop_cvr:.1%}\n"
+def trial_result(cand: Candidate, title: str, visitors: int, cvr: float, shop_cvr: float, verdict: str, days: int,
+                 trial_round: int = 1) -> dict[str, Any]:
+    what = f"优化后再观察 {days} 天" if trial_round > 1 else f"测款 {days} 天"
+    body = (f"**{title}** {what}\n访客 {visitors} · 转化率 {cvr:.1%} · 店铺平均 {shop_cvr:.1%}\n"
             f"系统建议：**{TRIAL_LABEL[verdict]}**")
-    order = [verdict] + [v for v in ("keep", "optimize", "drop") if v != verdict]
+    options = ("keep", "drop") if trial_round > 1 else ("keep", "optimize", "drop")  # 只优化一轮
+    order = [verdict] + [v for v in options if v != verdict]
     return _card("测款结论", [_md(body), {"tag": "action", "actions": [
         _button(TRIAL_LABEL[v], "candidate", cand.id, v, cand.version, "primary" if v == verdict else "default") for v in order
     ]}], template="purple")
@@ -101,3 +104,37 @@ def resolved(original: dict[str, Any], entity: str, obj_id: int, note: str) -> d
         )
     els = [_md(f"✅ {note}") if is_target(e) else e for e in original.get("elements", [])]
     return {**original, "elements": els}
+
+
+def notice(title: str, body: str, template: str = "orange") -> dict[str, Any]:
+    """无按钮的通知：预算提醒、备份失败等。"""
+    return _card(title, [_md(body)], template=template)
+
+
+def system_weekly(period: str, c: dict[str, Any]) -> dict[str, Any]:
+    f, cost = c["fetch"], c["cost"]
+    lines = [
+        f"**数据采集**：{f['total']} 项，成功 {f['success']}（{f['success_rate']:.0%}），人工导入 {f['manual']}，缺失 {f['missing']}",
+        f"**AI 认路**：{c['repairs']} 次；**风控事件**：{c['risk_total']} 次"
+        + (f"（{'、'.join(f'{k} {v}' for k, v in c['risks'].items())}）" if c["risks"] else ""),
+        f"**作业失败**：{c['jobs_failed']} 个；**智能体运行失败**：{c['runs_failed']} 次",
+        f"**LLM 成本**：主流程 ¥{cost['main']:.2f}，单独任务 ¥{cost['adhoc']:.2f}；本月累计 ¥{cost['month']:.2f} / 预算 ¥{cost['monthly_budget']:.0f}",
+    ]
+    if cost["top_agents"]:
+        lines.append("花费最多：" + "、".join(f"{a} ¥{v:.2f}" for a, v in cost["top_agents"]))
+    apps = c["applications"]
+    lines.append(f"**申请事项**：已完成 {apps['done']} / {apps['total']}"
+                 + ("；未完成：" + "、".join(apps["pending"]) if apps["pending"] else ""))
+    return _card(f"周度系统报告 · {period}", [_md("\n".join(lines))], template="grey")
+
+
+def adhoc_result(task_id: int, title: str, status: str, summary: str, promote_label: str = "",
+                 version: int = 0) -> dict[str, Any]:
+    """单独任务完成通知（私聊提交人）。结果可转化时带「转为建议 / 候选」按钮。"""
+    head = {"done": "已完成", "failed": "失败", "cancelled": "已取消"}.get(status, status)
+    els = [_md(summary)]
+    if promote_label:
+        els.append({"tag": "action", "actions": [
+            _button(promote_label, "adhoc_task", task_id, "promote", version, "primary")]})
+    return _card(f"单独任务 #{task_id} · {title} · {head}", els,
+                 template={"done": "green", "failed": "red"}.get(status, "grey"))

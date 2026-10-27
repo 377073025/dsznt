@@ -50,6 +50,14 @@ budget:
   # 超日预算时仍然照常执行的智能体（与拍板相关）
   critical_agents: [ceo.daily, ceo.dispatch, ceo.accept, ops.diagnose]
 
+# Batch 调用（07 号文档 7.4 节）：半价，结果延迟返回。列出的智能体在主流程里先提交 Batch，
+# worker 每 poll_minutes 查一次；超过 max_wait_minutes 未返回则改走实时调用，早报不会因此缺失
+llm_batch:
+  enabled: true
+  agents: [ops.diagnose]
+  poll_minutes: 10
+  max_wait_minutes: 45
+
 # 单独任务（07 号文档 17.7 节）：与主流程隔离的预算、并发和网页读取额度
 adhoc:
   daily_cny: 2                  # 单独任务每日 LLM 预算，不占主流程预算
@@ -75,6 +83,13 @@ schedule:
   review_due: "0 9 * * *"
   health_check_minutes: 30
   backup: "0 3 * * *"
+  system_report: "0 21 * * sun"   # 每周日晚发周度系统报告给店主
+  purge_runs: "30 3 * * *"      # 按 adhoc.*_retention_days 清理运行记录
+
+# 每日备份（07 号文档 2.2 节）：dir 建议改到另一块盘或网盘同步目录
+backup:
+  dir: data/backups
+  keep_days: 30
 
 timeouts:
   suggestion_expire_hours: 48

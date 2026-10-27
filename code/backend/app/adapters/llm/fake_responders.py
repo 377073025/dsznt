@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.adapters.llm.base import LLMRequest
@@ -126,7 +127,23 @@ def ceo_chat(req: LLMRequest) -> dict:
     return {"reply": "这个问题我暂时回答不了，可以换个说法，或者发「帮助」看看我能做什么。", "instruction": ""}
 
 
+def selection_revise(req: LLMRequest) -> dict:
+    fb = req.context["feedback"]
+    m = re.search(r"(\d+(?:\.\d+)?)\s*元?", fb)
+    return {"sell_price_yuan": float(m.group(1)) if m and ("价" in fb or "元" in fb) else 0.0,
+            "switch_offer": "换" in fb and "货源" in fb, "note": fb}
+
+
+def selection_compliance(req: LLMRequest) -> dict:
+    title = req.context["title"]
+    risky = [w for w in ("仿", "同款", "联名") if w in title]
+    return {"passed": not risky, "risk_level": "high" if risky else "low",
+            "issues": [f"标题含「{w}」，疑似仿款" for w in risky]}
+
+
 DEFAULT_RESPONDERS = {
+    "selection.compliance": selection_compliance,
+    "selection.revise": selection_revise,
     "ceo.revise": ceo_revise,
     "ceo.chat": ceo_chat,
     "ops.diagnose": ops_diagnose,
