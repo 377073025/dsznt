@@ -18,6 +18,7 @@ from app.data import queries, router, snapshot
 from app.interfaces.feishu import cards
 from app.interfaces.feishu.notify import send_card
 from app.models import Candidate, DomainEvent, FetchJob, Job, LlmBatch, Offer, Product, Shop, Suggestion, Task, TestRun
+from app.workflow import on_sale
 from app.workflow.events import subscribe
 from app.workflow.jobs import JobContext, enqueue, job_handler
 from app.workflow.state_machine import SYSTEM, transition
@@ -112,6 +113,7 @@ def _on_data_ready(s: Session, ev: DomainEvent) -> None:
     day = date.fromisoformat(ev.payload["day"])
     if ev.payload["item"] == "goods_snapshot":
         snapshot.detect_changes(s, day)  # 每天的快照到齐就和前一天对比，补采的历史也一样
+        on_sale.backfill_listed_ids(s, day)  # 新上架的测款商品出现在快照里 → 回填拼多多商品 ID
     # 只分析有每日采集作业的那天；补采历史数据不触发分析
     scheduled = any(j.payload.get("day") == day.isoformat() for j in s.scalars(select(Job).where(Job.type == "daily.fetch")))
     if scheduled and router.all_ready(s, DAILY_ITEMS, day):
@@ -190,7 +192,7 @@ def _on_accepted(s: Session, ev: DomainEvent) -> None:
     task = s.get(Task, ev.entity_id)
     if task.ref_type == "candidate":
         # 铺货完成并验收 → 上架 → 开始 14 天测款。
-        # 商品在拼多多的 ID 先记铺货工具回执，之后由商品快照按标题匹配回填（M4）
+        # 商品在拼多多的 ID 先记铺货工具回执，之后由商品快照按标题匹配回填（on_sale.backfill_listed_ids）
         cand = s.get(Candidate, task.ref_id)
         transition(s, "candidate", cand.id, "list", SYSTEM)
         transition(s, "candidate", cand.id, "start_test", SYSTEM)

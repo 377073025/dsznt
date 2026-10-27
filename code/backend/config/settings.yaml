@@ -81,6 +81,8 @@ schedule:
   selection_weekly: "0 6 * * mon"
   selection_report: "30 8 * * mon"
   review_due: "0 9 * * *"
+  offer_watch: "0 10 * * *"       # 在售款货源复查
+  monthly_tuning: "0 9 1 * *"     # 月度调权提议
   health_check_minutes: 30
   backup: "0 3 * * *"
   system_report: "0 21 * * sun"   # 每周日晚发周度系统报告给店主

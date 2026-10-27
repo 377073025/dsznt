@@ -23,7 +23,7 @@ from app.workflow.state_machine import MODELS, Actor, TransitionDenied, can, tra
 EVENT_LABELS = {
     "approve": "已同意", "reject": "已拒绝", "revise": "待修改，请直接回复修改意见", "confirm": "已确认写入",
     "cancel": "已取消写入", "keep": "已确认留款", "optimize": "已确认优化后再观察", "drop": "已确认下架",
-    "promote": "已转化，请在新卡片上拍板",
+    "promote": "已转化，请在新卡片上拍板", "apply": "已同意调整，规则已保存为新版本",
 }
 
 
@@ -38,6 +38,26 @@ def get_or_register(s: Session, open_id: str) -> User:
         s.add(user)
         s.flush()
     return user
+
+
+ROLES = {"owner": "店主", "operator": "运营", "viewer": "查看"}
+
+
+def set_role(s: Session, actor: User, target: User, role: str, name: str = "") -> None:
+    """店主调整角色（Web「用户与权限」、飞书「设为运营 @某人」）。至少保留一位店主。"""
+    if actor.role != "owner":
+        raise PermissionError("只有店主可以调整角色")
+    if role not in ROLES:
+        raise ValueError(f"未知角色 {role}")
+    if target.role == "owner" and role != "owner":
+        owners = s.scalars(select(User.id).where(User.role == "owner")).all()
+        if len(owners) <= 1:
+            raise ValueError("至少要保留一位店主")
+    if name:
+        target.name = name
+    if target.role != role:
+        audit(s, f"user:{actor.feishu_open_id}", "user.set_role", f"user:{target.id}", {"from": target.role, "to": role})
+        target.role = role
 
 
 def on_card_action(s: Session, open_id: str, value: dict[str, Any]) -> dict[str, Any]:

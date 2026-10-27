@@ -5,13 +5,13 @@ import json
 from pathlib import Path
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.types import ListingPackage
 from app.agents.runtime import AgentRunner, AgentSpec
 from app.config import get_settings
-from app.models import Candidate, ChangeEvent, Demand, Offer, Product, Task
+from app.models import Asset, Candidate, ChangeEvent, Demand, Offer, Product, Task
 from app.services import Services
 from app.tools.registry import ToolContext, tools_for
 from app.workflow.state_machine import Actor, transition
@@ -25,6 +25,15 @@ class CopyOut(BaseModel):
 
 
 COPY = AgentSpec(name="exec.copy", model_role="main", output=CopyOut, tool_names=[])
+
+
+def record_asset(s: Session, goods_id: str, kind: str, path: str, origin: str, note: str = "") -> Asset:
+    """素材库登记：同一商品同类素材按版本递增，旧版本保留（换回原图时要用）。"""
+    last = s.scalar(select(func.max(Asset.asset_version)).where(Asset.goods_id == goods_id, Asset.kind == kind))
+    a = Asset(goods_id=goods_id, kind=kind, path=path, origin=origin, asset_version=(last or 0) + 1, note=note)
+    s.add(a)
+    s.flush()
+    return a
 
 
 def execute(runner: AgentRunner, s: Session, services: Services, task_id: int) -> Task:
@@ -56,6 +65,7 @@ def _produce(runner: AgentRunner, s: Session, services: Services, task: Task) ->
         if services.image_gen is None:
             raise RuntimeError("生图服务未接入（能力 image_gen）")
         new = services.image_gen.replace_background(Path(f"{prod.main_image_hash if prod else goods_id}.jpg"), task.spec["instruction"])
+        record_asset(s, goods_id, "main", str(new), "ai", f"任务 #{task.id}：{task.spec['instruction']}")
         return {"patch": {"main_image": new.stem}, "preview": str(new), "method": "image_gen"}
     if task.executor == "copy":
         out = runner.run(COPY, f"为商品 {prod.name if prod else goods_id} 改写标题：{task.spec['instruction']}",
@@ -89,6 +99,9 @@ def _listing_package(runner: AgentRunner, s: Session, task: Task) -> dict:
     path = out_dir / f"candidate_{cand.id}.json"
     path.write_text(pkg.model_dump_json(indent=2), encoding="utf-8")
     pkg.path = str(path)
+    for img in pkg.main_images:  # 货源图先记在货源名下，上架后回填商品 ID 时一起改过去
+        if s.scalar(select(Asset.id).where(Asset.goods_id == offer.id, Asset.path == img)) is None:
+            record_asset(s, offer.id, "main", img, "supplier", f"货源 {offer.id}")
     return {"package": pkg.model_dump(), "selling_points": copy.selling_points}
 
 

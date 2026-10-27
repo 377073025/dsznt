@@ -55,6 +55,18 @@ def _enqueue_system_report() -> None:
         enqueue(s, "system.weekly_report", {"end": end.isoformat()}, dedupe_key=f"system.weekly_report:{end.isoformat()}")
 
 
+def _enqueue_offer_watch() -> None:
+    day = _today_cn().isoformat()
+    with session_scope() as s:
+        enqueue(s, "fetch.offer_watch", {"day": day}, dedupe_key=f"fetch.offer_watch:{day}")
+
+
+def _enqueue_monthly_tuning() -> None:
+    period = _today_cn().strftime("%Y-%m")
+    with session_scope() as s:
+        enqueue(s, "rules.monthly_tuning", {"period": period}, dedupe_key=f"rules.monthly_tuning:{period}")
+
+
 def _backup() -> None:
     """在调度器线程里直接跑（不占作业通道）；失败时通过作业发飞书通知。"""
     try:
@@ -89,6 +101,8 @@ def build_scheduler() -> BackgroundScheduler:
     sched.add_job(_enqueue_timeouts, "interval", minutes=30, id="timeouts")
     sched.add_job(_backup, CronTrigger.from_crontab(conf["backup"], timezone=tz), id="backup")
     sched.add_job(_enqueue_system_report, CronTrigger.from_crontab(conf["system_report"], timezone=tz), id="system_report")
+    sched.add_job(_enqueue_offer_watch, CronTrigger.from_crontab(conf["offer_watch"], timezone=tz), id="offer_watch")
+    sched.add_job(_enqueue_monthly_tuning, CronTrigger.from_crontab(conf["monthly_tuning"], timezone=tz), id="tuning")
     sched.add_job(_purge_runs, CronTrigger.from_crontab(conf["purge_runs"], timezone=tz), id="purge_runs")
     return sched
 

@@ -6,8 +6,7 @@ const AGENT_STATE = { running: "运行中", waiting_human: "等待人工", pause
 const RUN_STATUS = { running: "运行中", succeeded: "成功", failed: "失败", cancelled: "已取消" };
 const TASK_STATUS = { queued: "排队中", deferred: "已顺延", running: "运行中", done: "已完成", failed: "失败",
   cancelled: "已取消", promoted: "已转化" };
-const CAP_STATUS = { healthy: "正常", degraded: "降级", circuit_open: "熔断", unavailable: "不可用", disabled: "未启用",
-  pending: "待接入" };
+const CAP_STATUS = { healthy: "正常", degraded: "降级", blocked: "暂停", configured: "待检查", not_configured: "未接入" };
 const FIELD_LABELS = { goods_id: "商品", category: "类目", keyword: "关键词", week: "周次", competitor_url: "竞品链接",
   limit: "数量上限", offer: "1688 链接或 offer id", heat: "热度", trend: "趋势", competition: "竞争度",
   start_date: "测款开始日期", days: "天数", day: "数据日期", since_day: "起始日期", question: "问题", name: "商品名称",
@@ -325,7 +324,7 @@ function pageErr(v, e) {
 }
 
 // ---------- 页面切换（#/agents、#/overview …）。只刷新当前页 ----------
-const VIEWS = ["agents", "overview", "selection", "board", "data", "rules", "costs"];
+const VIEWS = ["agents", "overview", "selection", "board", "data", "rules", "costs", "catalog", "users", "integrations"];
 const currentView = () => { const v = location.hash.replace(/^#\/?/, "").split("?")[0]; return VIEWS.includes(v) ? v : "agents"; };
 
 function route() {

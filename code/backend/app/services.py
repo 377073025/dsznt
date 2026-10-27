@@ -44,7 +44,8 @@ class Services:
 def build_services(settings: Settings | None = None) -> Services:
     settings = settings or get_settings()
     if settings.adapter_mode == "fake":
-        pdd = FakePddShop()
+        dropship = FakeDropship()
+        pdd = FakePddShop(dropship)
         sourcing = FakeSourcing()
         return Services(
             mode="fake",
@@ -53,7 +54,7 @@ def build_services(settings: Settings | None = None) -> Services:
             pdd={"api": pdd, "web": pdd},
             sourcing={"api": sourcing, "web": sourcing},
             market=FakeMarketData(),
-            dropship=FakeDropship(),
+            dropship=dropship,
             image_gen=FakeImageGen(),
             _pdd_writer=FakePddWriter(),
         )

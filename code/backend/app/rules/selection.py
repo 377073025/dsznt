@@ -89,3 +89,40 @@ def trial_verdict(visitors: int, cvr: float, shop_cvr: float, cfg: dict[str, Any
     if visitors >= cfg["keep_min_visitors"] and shop_cvr and cvr >= shop_cvr * cfg["keep_min_cvr_ratio"]:
         return "keep"
     return "optimize"
+
+
+def tune_weights(weights: dict[str, int], samples: list[tuple[dict[str, float], bool]], cfg: dict[str, Any]
+                 ) -> tuple[dict[str, int], dict[str, dict[str, float]]]:
+    """月度调权（04 号文档 3.6「规则自优化」）：比较测款成功款与失败款在各维度上的得分率。
+
+    samples 为 (打分明细, 是否留款)。成功款得分率明显更高的维度加权，更低的减权；
+    每个维度每月最多变 max_step，合计保持 100。样本不足时原样返回。
+    """
+    win = [b for b, ok in samples if ok]
+    lose = [b for b, ok in samples if not ok]
+    stats: dict[str, dict[str, float]] = {}
+    if len(samples) < cfg["min_samples"] or len(win) < 2 or len(lose) < 2:
+        return dict(weights), stats
+    step = cfg["max_step"]
+    new = {}
+    for k, w in weights.items():
+        if not w:
+            new[k] = w
+            continue
+        a = sum(b.get(k, 0) for b in win) / len(win) / w
+        z = sum(b.get(k, 0) for b in lose) / len(lose) / w
+        delta = max(-step, min(step, round((a - z) * 10)))
+        stats[k] = {"win": round(a, 2), "lose": round(z, 2), "delta": delta}
+        new[k] = max(1, w + delta)
+    # 合计拉回 100：差额一分一分摊到变化最小的维度上，避免抵消刚调整的方向，也不让单个维度变化过大
+    gap = 100 - sum(new.values())
+    order = sorted((k for k in new if weights[k]), key=lambda k: (abs(stats[k]["delta"]), -new[k]))
+    for i in range(1000):
+        if not gap:
+            break
+        k = order[i % len(order)]
+        if gap > 0 or new[k] > 1:
+            unit = 1 if gap > 0 else -1
+            new[k] += unit
+            gap -= unit
+    return new, stats

@@ -138,3 +138,37 @@ def adhoc_result(task_id: int, title: str, status: str, summary: str, promote_la
             _button(promote_label, "adhoc_task", task_id, "promote", version, "primary")]})
     return _card(f"单独任务 #{task_id} · {title} · {head}", els,
                  template={"done": "green", "failed": "red"}.get(status, "grey"))
+
+
+def offer_alert(name: str, offer_id: str, issues: list[str], backups: list[dict[str, Any]]) -> dict[str, Any]:
+    """在售款货源异常（offer_watch）：店主决定换货源还是下架，系统不自动处理。"""
+    url = f"https://detail.1688.com/offer/{offer_id.removeprefix('1688_')}.html"
+    lines = [f"**{name}** 的货源 [{offer_id}]({url})：", *(f"- {x}" for x in issues)]
+    if backups:
+        lines.append("\n**备选货源**")
+        for b in backups:
+            u = f"https://detail.1688.com/offer/{b['offer_id'].removeprefix('1688_')}.html"
+            tag = "选品时已审查" if b["checked"] else "以图搜到，同款待确认"
+            lines.append(f"- [{b['title']}]({u}) ¥{b['price_fen'] / 100:.2f}（{tag}）")
+    else:
+        lines.append("\n没有找到符合规则的备选货源。")
+    lines.append("\n换货源：在 Web「商品与素材」改货源，或发「补货源 商品名」做完整同款审查；不换就考虑下架。")
+    return _card(f"货源异常 · {name}", [_md("\n".join(lines))], template="red")
+
+
+WEIGHT_LABELS = {"profit": "利润", "demand": "需求", "competition": "竞争", "supplier": "供应商",
+                 "dropship_auto": "自动下单", "fit": "契合度", "assets": "素材"}
+
+
+def rule_proposal(p: Any) -> dict[str, Any]:
+    """月度调权提议：店主同意后保存为规则新版本。"""
+    sm = p.summary
+    lines = [f"最近有结论的测款 {sm['samples']} 款（留款 {sm['kept']}、下架 {sm['delisted']}），各维度得分率（留款 / 下架）与建议："]
+    for k, st in sm["stats"].items():
+        old, new = sm["old"][k], sm["new"][k]
+        lines.append(f"- {WEIGHT_LABELS.get(k, k)}：{st['win']:.0%} / {st['lose']:.0%}，权重 {old} → {new}")
+    lines.append("\n同意后保存为规则配置的新版本，下周选品起生效；可在 Web「规则配置」回看。")
+    return _card(f"月度调权提议 · {p.period}", [_md("\n".join(lines)), {"tag": "action", "actions": [
+        _button("同意调整", "rule_proposal", p.id, "apply", p.version, "primary"),
+        _button("不调整", "rule_proposal", p.id, "reject", p.version, "danger"),
+    ]}], template="purple")

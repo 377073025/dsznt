@@ -15,7 +15,7 @@ from app.agents import ceo, selection
 from app.data import queries
 from app.data.channels import manual_import
 from app.interfaces.feishu import adhoc_commands, cards
-from app.interfaces.feishu.handler import get_or_register
+from app.interfaces.feishu.handler import get_or_register, set_role
 from app.interfaces.feishu.notify import remember_chat, send_card
 from app.models import Capability, Candidate, FetchJob, Offer, Report, Shop, Suggestion, User
 from app.services import Services
@@ -28,6 +28,7 @@ HELP = (
     "· 选品 —— 看本周推荐\n"
     "· 状态 —— 数据通道与待处理事项\n"
     "· 把导出的表格文件直接发给我 —— 自动导入\n"
+    "· 设为运营 @某人 / 设为查看 @某人 —— 调整角色（店主）\n"
     "· 其他问题直接问，例如「海盐最近怎么样」"
 )
 _MENTION = re.compile(r"@_user_\d+\s*")
@@ -49,6 +50,10 @@ def handle_message(ctx: JobContext, p: dict[str, Any]) -> None:
         return
     text = _MENTION.sub("", p.get("text", "")).strip()
     if not text:
+        return
+    reply = _role_command(s, user, p.get("text", ""), p.get("mentions") or [])
+    if reply is not None:
+        _reply(services, chat_id, reply)
         return
     command = COMMANDS.get(text)
     if command:
@@ -134,6 +139,32 @@ def _on_chat(ctx: JobContext, user: User, chat_id: str, text: str) -> None:
 
 
 # ---------- 固定指令（不调用模型） ----------
+
+_ROLE_CMD = re.compile(r"^设为(运营|查看)")
+_ROLE_WORDS = {"运营": "operator", "查看": "viewer"}
+
+
+def _role_command(s: Session, user: User, raw: str, mentions: list[dict[str, Any]]) -> str | None:
+    """「设为运营 @某人」「设为查看 @某人」：只取指令后面 @ 的人（群里 @ 机器人的那个不算）。"""
+    m = _ROLE_CMD.match(_MENTION.sub("", raw).strip())
+    if m is None:
+        return None
+    if user.role != "owner":
+        return "只有店主可以调整角色。"
+    at = raw.find(m.group(0)) + len(m.group(0))
+    targets = [x for x in mentions if raw.find(x["key"], at) >= 0]
+    if not targets:
+        return f"请在指令后 @ 要调整的人，例如：设为{m.group(1)} @张三"
+    done, refused = [], []
+    for x in targets:
+        target = get_or_register(s, x["open_id"])
+        try:
+            set_role(s, user, target, _ROLE_WORDS[m.group(1)], name=target.name or x.get("name", ""))
+            done.append(target.name or x["open_id"])
+        except ValueError as e:
+            refused.append(f"{target.name or x['open_id']}：{e}")
+    return "；".join(([f"已把 {'、'.join(done)} 设为{m.group(1)}"] if done else []) + refused) + "。"
+
 
 def _cmd_help(s: Session, services: Services, chat_id: str) -> None:
     _reply(services, chat_id, HELP + "\n\n" + adhoc_commands.HELP)

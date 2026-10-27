@@ -1,4 +1,5 @@
-"""Web 控制台其余页面的接口（02 号文档 7.2 节）：闭环总览、选品中心、任务看板、数据中心、规则配置、成本。
+"""Web 控制台其余页面的接口（02 号文档 7.2 节）：闭环总览、选品中心、任务看板、数据中心、规则配置、成本、
+用户与权限、商品与素材。
 
 只读查询为主；会改状态的操作（拍板、改一改、恢复采集、改规则）都按角色校验，且和飞书按钮走同一条路径。
 """
@@ -18,10 +19,10 @@ from app.config import get_settings
 from app.data import queries, router as data_router
 from app.data.items import load_items
 from app.db import session_scope, utcnow
-from app.interfaces.feishu.handler import get_or_register
+from app.interfaces.feishu.handler import ROLES, get_or_register, set_role
 from app.llm.gateway import Gateway
-from app.models import (Capability, Candidate, ChangeEvent, Demand, FetchJob, LlmBatch, LlmUsage, ManualImport, Offer, Report, Review,
-                        RiskEvent, Suggestion, Task, TestRun, User)
+from app.models import (Asset, Capability, Candidate, ChangeEvent, Demand, FetchJob, LlmBatch, LlmUsage, ManualImport, Offer, Product,
+                        Report, Review, RiskEvent, RuleProposal, Suggestion, Task, TestRun, User)
 from app.workflow import rule_config
 from app.workflow.jobs import enqueue
 from app.workflow.state_machine import MODELS, Actor, can
@@ -258,7 +259,10 @@ def get_rules(s: Session = Depends(db)) -> dict[str, Any]:
         base = older.value if older else rule_config._baseline()
         changes.append({"version": newer.rule_version, "by": newer.approved_by, "at": newer.at.isoformat(),
                         "changes": rule_config.diff(base, newer.value)})
-    return {"version": version, "rules": get_settings().rules, "history": changes}
+    props = s.scalars(select(RuleProposal).order_by(RuleProposal.id.desc()).limit(5)).all()
+    return {"version": version, "rules": get_settings().rules, "history": changes,
+            "proposals": [{"id": p.id, "period": p.period, "status": p.status, "version": p.version,
+                           "summary": p.summary, "rule_version": p.rule_version} for p in props]}
 
 
 @api.put("/rules")
@@ -309,3 +313,83 @@ def costs(days: int = 30, s: Session = Depends(db)) -> dict[str, Any]:
                    "adhoc_daily": gw.settings.adhoc["daily_cny"], "adhoc_today": round(gw.spent_today(s, "adhoc"), 2),
                    "over": gw.over_budget(s), "critical": b["critical_agents"]},
     }
+
+
+# ---------- 用户与权限 ----------
+
+@api.get("/users")
+def list_users(s: Session = Depends(db)) -> dict[str, Any]:
+    return {"roles": ROLES, "users": [
+        {"id": u.id, "open_id": u.feishu_open_id, "name": u.name, "role": u.role, "created_at": u.created_at.isoformat()}
+        for u in s.scalars(select(User).order_by(User.id))]}
+
+
+class UserPatch(BaseModel):
+    role: str | None = None
+    name: str | None = None
+
+
+@api.patch("/users/{user_id}")
+def patch_user(user_id: int, body: UserPatch, s: Session = Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    target = s.get(User, user_id)
+    if target is None:
+        raise HTTPException(404, "用户不存在")
+    try:
+        set_role(s, user, target, body.role or target.role, name=(body.name or "").strip())
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"id": target.id, "name": target.name, "role": target.role}
+
+
+# ---------- 商品与素材 ----------
+
+@api.get("/catalog")
+def product_catalog(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    """在售商品、各自的货源（offer_watch 复查对象）与素材库版本。"""
+    assets = defaultdict(list)
+    for a in s.scalars(select(Asset).order_by(Asset.goods_id, Asset.kind, Asset.asset_version.desc())):
+        assets[a.goods_id].append({"id": a.id, "kind": a.kind, "version": a.asset_version, "origin": a.origin,
+                                   "path": a.path, "note": a.note, "at": a.created_at.isoformat()})
+    offers = {o.id: o for o in s.scalars(select(Offer))}
+    trials = {t.goods_id: t for t in s.scalars(select(TestRun).order_by(TestRun.id))}
+    out = []
+    for p in queries.products(s):
+        o = offers.get(p.source_offer_id)
+        tr = trials.get(p.goods_id)
+        out.append({
+            "goods_id": p.goods_id, "name": p.name, "title": p.title, "price_fen": p.price_fen,
+            "main_image": p.main_image_hash,
+            "source": {"offer_id": p.source_offer_id, "title": o.title if o else "", "price_fen": o.price_fen if o else None,
+                       "stock": o.stock if o else None, "checked_at": o.updated_at.isoformat() if o else None}
+            if p.source_offer_id else None,
+            "trial": {"candidate_id": tr.candidate_id, "round": tr.trial_round, "verdict": tr.verdict} if tr else None,
+            "assets": assets.get(p.goods_id, []),
+        })
+    return out
+
+
+class SourceIn(BaseModel):
+    offer: str  # 1688 链接或 offer id；空字符串表示不再复查
+
+
+@api.put("/products/{goods_id}/source")
+def put_source(goods_id: str, body: SourceIn, s: Session = Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    """登记或更换在售商品的货源（offer_watch 第二天起按新货源复查）。只改本系统记录，不改铺货工具里的对应关系。"""
+    from app.agents.catalog import _offer_id
+    from app.workflow.events import audit
+
+    if user.role not in ("owner", "operator"):
+        raise HTTPException(403, "只有店主和运营可以改货源")
+    prod = s.scalar(select(Product).where(Product.goods_id == goods_id))
+    if prod is None:
+        raise HTTPException(404, "商品不存在")
+    raw = body.offer.strip()
+    new = _offer_id(raw) if raw else ""
+    if new and not new.removeprefix("1688_").isdigit():
+        raise HTTPException(400, "请填 1688 商品链接或 offer id")
+    audit(s, f"user:{user.feishu_open_id}", "product.set_source", f"product:{goods_id}",
+          {"from": prod.source_offer_id, "to": new})
+    prod.source_offer_id = new
+    return {"goods_id": goods_id, "source_offer_id": new}

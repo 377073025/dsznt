@@ -39,6 +39,14 @@ selection:
     drop_max_visitors: 100
     drop_max_cvr_ratio: 0.5
     optimize_days: 7             # 判定「优化」后，交运营智能体诊断，再观察的天数
+  # 月度调权（每月 1 日）：比较留款与下架款的各维度得分率，提议调整打分权重，店主同意后生效
+  monthly_tuning:
+    min_samples: 6               # 有结论的测款少于这个数不调
+    max_step: 3                  # 每个维度每月最多加减几分
+  # 在售款货源复查（每日 10:00）
+  offer_watch:
+    price_rise_ratio: 0.05       # 拿货价比上次记录涨超过这个比例就告警
+    max_backups: 3
 
 ops:
   min_weekly_visitors_for_cvr: 200

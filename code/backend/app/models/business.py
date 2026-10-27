@@ -84,6 +84,7 @@ class Asset(Base, TimestampMixin):
     path: Mapped[str] = mapped_column(String(512))
     asset_version: Mapped[int] = mapped_column(Integer, default=1)
     origin: Mapped[str] = mapped_column(String(16))  # supplier / ai / edited
+    note: Mapped[str] = mapped_column(Text, default="")  # 来源说明，例如 任务 #3：换成卧室场景
 
 
 class Demand(Base, TimestampMixin):

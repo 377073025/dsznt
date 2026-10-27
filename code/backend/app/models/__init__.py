@@ -32,6 +32,7 @@ from app.models.system import (  # noqa: F401
     ProcessedAction,
     RiskEvent,
     RuleConfig,
+    RuleProposal,
     Shop,
     User,
     WebScript,

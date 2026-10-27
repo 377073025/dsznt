@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from app.models import Candidate, Suggestion, Task
+from app.models import Candidate, RuleProposal, Suggestion, Task
 from app.workflow.events import audit, emit
 
 HUMAN_ROLES = {"owner", "operator"}
@@ -90,9 +90,13 @@ TRANSITIONS: dict[tuple[str, str, str], Transition] = {
     ("task", "submitted", "accept"): _t("accepted", *MACHINE),
     ("task", "submitted", "rework"): _t("pending", *MACHINE),
     ("task", "submitted", "escalate"): _t("escalated", *MACHINE),
+    # 规则调整提议（月度调权）：店主同意才生效
+    ("rule_proposal", "pending", "apply"): _t("applied", OWNER),
+    ("rule_proposal", "pending", "reject"): _t("rejected", OWNER),
+    ("rule_proposal", "pending", "expire"): _t("expired", "system"),  # 下个月的新提议替代
 }
 
-MODELS = {"suggestion": Suggestion, "candidate": Candidate, "task": Task}
+MODELS = {"suggestion": Suggestion, "candidate": Candidate, "task": Task, "rule_proposal": RuleProposal}
 
 
 class TransitionDenied(Exception):

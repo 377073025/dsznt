@@ -1,4 +1,4 @@
-// Web 控制台其余页面（02 号文档 7.2 节）：闭环总览、选品中心、任务看板、数据中心、规则配置、成本。
+// Web 控制台其余页面（02 号文档 7.2 节）：闭环总览、选品中心、任务看板、数据中心、规则配置、成本、商品与素材、用户与权限、接入状态。
 // 与工作台共用 app.js 里的工具函数（$、esc、api、badge、yuan、timeStr、state、canSubmit）。
 "use strict";
 
@@ -264,7 +264,26 @@ const RULE_LABEL = {
   drop_max_visitors: "下架：访客少于", drop_max_cvr_ratio: "下架：转化率 < 店均 ×", optimize_days: "优化后再观察天数",
   brand_words: "品牌 / IP 词库", llm_review: "词库没命中时交模型审查", min_weekly_visitors_for_cvr: "周访客少于此数不判断转化率",
   cvr_drop_alert_ratio: "转化率异常：近 7 天 < 前 7 天 ×", max_suggestions_per_report: "早报最多建议条数", review_window_days: "复盘观察天数",
+  monthly_tuning: "月度调权", min_samples: "有结论的测款至少几款才调", max_step: "每个维度每月最多加减",
+  offer_watch: "在售款货源复查", price_rise_ratio: "拿货价涨幅告警线（0.05 = 5%）", max_backups: "告警里列几个备选货源",
 };
+const WEIGHT_LABEL = { profit: "利润", demand: "需求", competition: "竞争", supplier: "供应商", dropship_auto: "自动下单", fit: "契合度", assets: "素材" };
+const PROPOSAL_STATUS = { pending: "待店主确认", applied: "已采纳", rejected: "未采纳", expired: "已作废" };
+
+function proposals(list) {
+  if (!list.length) return "";
+  return `<section class="panel"><div class="section-head"><h2>调权提议</h2><span class="muted small">每月 1 日按测款结果比较各维度，店主同意后保存为新版本</span></div>
+    ${list.map((p) => {
+      const sm = p.summary;
+      return `<div class="task"><div class="head"><b>${esc(p.period)}</b>${badge(p.status, PROPOSAL_STATUS)}
+      <span class="muted small">测款 ${sm.samples} 款：留款 ${sm.kept}、下架 ${sm.delisted}${p.rule_version ? ` · 已存为版本 ${p.rule_version}` : ""}</span>
+      <div class="actions">${p.status === "pending" ? ownerBtns("rule_proposal", p.id, [["apply", "同意调整", ""], ["reject", "不调整", "danger"]]) : ""}</div></div>
+      <div class="table-wrap"><table><tr><th>维度</th><th class="num">得分率 · 留款</th><th class="num">下架</th><th class="num">权重</th></tr>
+      ${Object.entries(sm.stats).map(([k, s]) => `<tr><td>${esc(WEIGHT_LABEL[k] || k)}</td><td class="num">${pct(s.win)}</td><td class="num">${pct(s.lose)}</td>
+        <td class="num">${sm.old[k]}${sm.new[k] !== sm.old[k] ? ` → <b>${sm.new[k]}</b>` : ""}</td></tr>`).join("")}</table></div>
+      ${sm.error ? `<p class="small err">没能保存：${esc(sm.error)}</p>` : ""}</div>`;
+    }).join("")}</section>`;
+}
 const rules = {
   auto: false, data: null,
   async load(el) {
@@ -276,6 +295,7 @@ const rules = {
         <p class="muted small">保存后 worker 从下一个作业起使用新规则；每次保存都留版本，下面可以看到改了什么。</p>
         <div id="rulesMsg" class="small"></div>
         <form id="rulesForm" class="rules">${this.fields(this.data.rules, "", owner)}</form></section>
+      ${proposals(this.data.proposals)}
       <section class="panel"><h2>修改记录</h2>${this.data.history.map((h) => `<div class="task"><div class="head"><b>版本 ${h.version}</b>
         <span class="muted small">${esc(h.by)} · ${esc(timeStr(h.at))}</span></div>
         <ul class="small">${h.changes.map((c) => `<li>${esc(c)}</li>`).join("") || "<li class='muted'>没有改动</li>"}</ul></div>`).join("") || `<p class="muted">还没有修改过</p>`}</section>`;
@@ -381,4 +401,115 @@ function showTip(bar) {
 }
 function hideTip() { document.querySelectorAll(".chart .tip").forEach((t) => { t.hidden = true; }); }
 
-window.PAGES = { overview, selection, board, data: dataCenter, rules, costs };
+// ---------- 商品与素材 ----------
+const ORIGIN = { supplier: "货源图", ai: "AI 生成", edited: "人工修改" };
+const ASSET_KIND = { main: "主图", detail: "详情图", scene: "场景图", sku: "SKU 图" };
+const offerUrl = (id) => `https://detail.1688.com/offer/${encodeURIComponent(id.replace(/^1688_/, ""))}.html`;
+const catalog = {
+  auto: false,
+  async load(el) {
+    const rows = await api("/api/catalog");
+    const edit = canSubmit();
+    const src = (p) => (p.source ? `<a href="${offerUrl(p.source.offer_id)}" target="_blank" rel="noopener">${esc(p.source.title || p.source.offer_id)}</a>`
+      : `<span class="muted">未登记</span>`);
+    const trial = (t) => (t ? `候选 #${t.candidate_id}${t.round > 1 ? " · 优化后" : ""}${t.verdict ? " · " + esc(VERDICT[t.verdict] || t.verdict) : ""}` : "");
+    el.innerHTML = `<section class="panel"><div class="section-head"><h2>在售商品与货源</h2>
+        <span class="muted small">登记了货源的商品每天 10:00 复查：下架、涨价、库存不足、按现售价不赚钱时飞书告警并列出备选货源</span></div>
+      <div class="table-wrap"><table><tr><th>商品</th><th class="num">售价</th><th>货源</th><th class="num">拿货价</th><th class="num">库存</th><th>测款</th>${edit ? "<th></th>" : ""}</tr>
+      ${rows.map((p) => `<tr><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.goods_id)}</div></td><td class="num">${yuan(p.price_fen)}</td>
+        <td>${src(p)}</td><td class="num">${p.source && p.source.price_fen != null ? yuan(p.source.price_fen) : "—"}</td>
+        <td class="num">${p.source && p.source.stock != null ? p.source.stock : "—"}</td><td class="small">${trial(p.trial)}</td>
+        ${edit ? `<td><button class="ghost" data-do="setSource" data-goods="${esc(p.goods_id)}" data-name="${esc(p.name)}" data-cur="${esc(p.source ? p.source.offer_id : "")}">${p.source ? "改货源" : "登记货源"}</button></td>` : ""}</tr>`).join("")
+        || `<tr><td colspan="7" class="muted">还没有商品数据</td></tr>`}</table></div></section>
+      <section class="panel"><div class="section-head"><h2>素材库</h2><span class="muted small">每次出图都留版本，旧版本用于「换回原图」</span></div>
+      ${rows.filter((p) => p.assets.length).map((p) => `<div class="task"><div class="head"><b>${esc(p.name)}</b><span class="muted small">当前主图 ${esc(p.main_image)}</span></div>
+        <div class="table-wrap"><table><tr><th>类型</th><th class="num">版本</th><th>来源</th><th>文件</th><th>说明</th><th>时间</th></tr>
+        ${p.assets.map((a) => `<tr><td>${esc(ASSET_KIND[a.kind] || a.kind)}</td><td class="num">v${a.version}</td><td>${esc(ORIGIN[a.origin] || a.origin)}</td>
+          <td class="small">${esc(a.path)}</td><td class="small">${esc(a.note)}</td><td class="small muted">${esc(timeStr(a.at))}</td></tr>`).join("")}</table></div></div>`).join("")
+        || `<p class="muted">还没有素材记录。图片执行器出的图、上架物料包用到的货源图会自动登记在这里。</p>`}</section>`;
+  },
+};
+HANDLERS.setSource = async (d) => {
+  const v = prompt(`「${d.name}」的 1688 货源链接或 offer id（清空表示不再复查）`, d.cur);
+  if (v === null) return;
+  try {
+    await api(`/api/products/${encodeURIComponent(d.goods)}/source`, { method: "PUT", body: { offer: v } });
+    toast("已保存，下次复查按新货源");
+    catalog.loaded = false; refresh();
+  } catch (e) { alert(e.message); }
+};
+
+// ---------- 用户与权限 ----------
+const users = {
+  auto: false,
+  async load(el) {
+    const d = await api("/api/users");
+    const owner = isOwner();
+    const roleSel = (u) => `<select data-user-role="${u.id}">${Object.entries(d.roles).map(([k, v]) =>
+      `<option value="${k}" ${k === u.role ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`;
+    el.innerHTML = `<section class="panel"><div class="section-head"><h2>用户与权限</h2>
+        <span class="muted small">第一次在群里 @ 机器人或私聊的人自动登记为「查看」${owner ? "" : " · 只有店主可以调整"}</span></div>
+      <p class="muted small">店主：拍板、写入确认、改规则、恢复熔断；运营：提交单独任务、导入数据、改货源；查看：只能看。店主也可以在飞书里发「设为运营 @某人」。</p>
+      <div class="table-wrap"><table><tr><th>名字</th><th>飞书 open_id</th><th>角色</th><th>登记时间</th></tr>
+      ${d.users.map((u) => `<tr><td>${owner ? `<input data-user-name="${u.id}" value="${esc(u.name)}" placeholder="填个名字">` : esc(u.name || "—")}</td>
+        <td class="small">${esc(u.open_id)}</td><td>${owner ? roleSel(u) : esc(d.roles[u.role] || u.role)}</td>
+        <td class="small muted">${esc(timeStr(u.created_at))}</td></tr>`).join("")}</table></div></section>`;
+  },
+};
+async function patchUser(id, body) {
+  try { await api(`/api/users/${id}`, { method: "PATCH", body }); toast("已保存"); } catch (e) { alert(e.message); }
+  users.loaded = false; refresh();
+}
+
+// ---------- 接入状态 ----------
+const APP_STATUS = { todo: "未开始", doing: "办理中", waiting: "等待审核", done: "已完成", rejected: "被拒", skip: "不需要" };
+const integrations = {
+  auto: false,
+  async load(el) {
+    const [cs, apps] = await Promise.all([api("/api/capabilities"), api("/api/applications")]);
+    const owner = isOwner(), edit = canSubmit();
+    const appName = Object.fromEntries(apps.map((a) => [a.id, a.name]));
+    const statusSel = (a) => `<select data-app-status="${esc(a.id)}">${Object.entries(APP_STATUS).map(([k, v]) =>
+      `<option value="${k}" ${k === a.status ? "selected" : ""}>${v}</option>`).join("")}</select>`;
+    el.innerHTML = `<section class="panel"><div class="section-head"><h2>数据与服务通道</h2>
+        <span class="muted small">每 30 分钟健康检查；不可用时自动降级（API → 网页 → 人工）</span></div>
+      <div class="table-wrap"><table><tr><th>能力</th><th>状态</th><th>对应申请</th><th>最近错误</th>${owner ? "<th></th>" : ""}</tr>
+      ${cs.map((c) => `<tr><td><b>${esc(c.title)}</b><div class="muted small">${esc(c.key)}</div></td>
+        <td><span class="chip s-${esc(c.status)}"><i class="dot"></i>${esc(CAP_STATUS[c.status] || c.status)}</span></td>
+        <td class="small">${c.applications.map((a) => `${esc(a)} ${esc(appName[a] || "")}`).join("<br>") || "—"}</td>
+        <td class="small">${esc(c.last_error || "")}</td>
+        ${owner ? `<td><button class="ghost" data-do="credential" data-key="${esc(c.key)}" data-title="${esc(c.title)}">录入凭证</button></td>` : ""}</tr>`).join("")}</table></div>
+      <p class="muted small">凭证只存进本机凭据管理器，不落库、不写日志。录入后状态为「待检查」，下次健康检查通过即为「正常」；真实模式还要把 config/settings.yaml 的 adapter_mode 改为 real 并重启 worker。</p></section>
+      <section class="panel"><div class="section-head"><h2>人工申请进度</h2><span class="muted small">08 号文档清单</span></div>
+      <div class="table-wrap"><table><tr><th>编号</th><th>事项</th><th>级别</th><th>状态</th><th>备注</th></tr>
+      ${apps.map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.name)}</td><td class="small">${esc(a.level)}</td>
+        <td>${edit ? statusSel(a) : esc(APP_STATUS[a.status] || a.status)}</td>
+        <td>${edit ? `<input data-app-note="${esc(a.id)}" value="${esc(a.note)}" placeholder="进度备注">` : esc(a.note)}</td></tr>`).join("")}</table></div></section>`;
+  },
+};
+HANDLERS.credential = async (d) => {
+  const ref = prompt(`「${d.title}」的凭证名称（例如 anthropic_api_key、feishu_app_secret）`);
+  if (!ref || !ref.trim()) return;
+  const value = prompt(`${ref.trim()} 的值（只存本机凭据管理器）`);
+  if (!value) return;
+  try {
+    await api(`/api/capabilities/${encodeURIComponent(d.key)}/credential`, { method: "POST", body: { ref: ref.trim(), value } });
+    toast("已录入，等待下次健康检查");
+    integrations.loaded = false; refresh();
+  } catch (e) { alert(e.message); }
+};
+
+// 表格里的下拉框 / 输入框：改完即保存
+document.addEventListener("change", async (e) => {
+  const t = e.target;
+  if (t.dataset.userRole) return patchUser(t.dataset.userRole, { role: t.value });
+  if (t.dataset.userName !== undefined) return patchUser(t.dataset.userName, { name: t.value });
+  const id = t.dataset.appStatus || t.dataset.appNote;
+  if (!id) return;
+  try {
+    await api(`/api/applications/${encodeURIComponent(id)}`, { method: "PATCH", body: t.dataset.appStatus ? { status: t.value } : { note: t.value } });
+    toast("已保存");
+  } catch (err) { alert(err.message); }
+});
+
+window.PAGES = { overview, selection, board, data: dataCenter, rules, costs, catalog, users, integrations };

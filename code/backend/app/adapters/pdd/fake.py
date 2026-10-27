@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 from app.adapters import fixtures
 from app.adapters.types import GoodsInfo, GoodsPatch, GoodsTraffic, KeywordStat, ListingPackage, OrderStats, PromotionStat, WriteResult
 
 
 class FakePddShop:
+    def __init__(self, dropship=None) -> None:
+        self.dropship = dropship  # 推送到铺货工具的商品会出现在店铺商品列表里（标题照抄，ID 由平台分配）
+
     def list_goods(self, shop_id: str, day: date) -> list[GoodsInfo]:
-        return fixtures.goods_list(day)
+        listed = [
+            GoodsInfo(goods_id=f"g_new_{i}", name=pkg.title[:16], title=pkg.title, price_fen=pkg.price_fen,
+                      main_image_hash=Path(pkg.main_images[0]).stem if pkg.main_images else "")
+            for i, pkg in enumerate(self.dropship.pushed if self.dropship else [], 1)
+        ]
+        return fixtures.goods_list(day) + listed
 
     def goods_daily_traffic(self, shop_id: str, day: date) -> list[GoodsTraffic]:
         return fixtures.goods_traffic(day)

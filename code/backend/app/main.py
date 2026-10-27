@@ -118,7 +118,9 @@ class ApplicationPatch(BaseModel):
 
 
 @app.patch("/api/applications/{app_id}")
-def patch_application(app_id: str, body: ApplicationPatch, s: Session = Depends(db), _: User = Depends(current_user)) -> dict:
+def patch_application(app_id: str, body: ApplicationPatch, s: Session = Depends(db), user: User = Depends(current_user)) -> dict:
+    if user.role not in ("owner", "operator"):
+        raise HTTPException(403, "只有店主和运营可以更新申请进度")
     a = s.get(Application, app_id)
     if a is None:
         raise HTTPException(404, "未知申请编号")

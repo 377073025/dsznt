@@ -20,6 +20,8 @@ def init(db_url: str | None = None, process: str | None = None) -> None:
     import app.workflow.adhoc  # noqa: F401
     import app.workflow.timeouts  # noqa: F401
     import app.workflow.system  # noqa: F401
+    import app.workflow.on_sale  # noqa: F401
+    import app.workflow.tuning  # noqa: F401
 
     with session_scope() as s:
         capabilities.seed(s, fake_mode=get_settings().adapter_mode == "fake")

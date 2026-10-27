@@ -30,7 +30,8 @@ def message_payload(ev: P2ImMessageReceiveV1) -> dict[str, Any] | None:
     base = {"open_id": sender.sender_id.open_id, "chat_id": msg.chat_id, "chat_type": msg.chat_type,
             "message_id": msg.message_id, "msg_type": msg.message_type}
     if msg.message_type == "text":
-        return {**base, "text": content.get("text", "")}
+        mentions = [{"key": m.key, "open_id": m.id.open_id, "name": m.name} for m in msg.mentions or []]
+        return {**base, "text": content.get("text", ""), "mentions": mentions}
     if msg.message_type == "file":
         return {**base, "file_key": content["file_key"], "file_name": content.get("file_name", "")}
     return None

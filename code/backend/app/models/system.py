@@ -222,3 +222,16 @@ class LlmBatch(Base, TimestampMixin):
     results: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # custom_id → LLMResult
     resume: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {type, payload}：结果到了以后要继续的作业
     deadline_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class RuleProposal(Base, TimestampMixin):
+    """规则调整提议（月度调权）：店主同意后保存为规则配置的新版本，不自动生效。"""
+
+    __tablename__ = "rule_proposal"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), default="monthly_tuning")
+    period: Mapped[str] = mapped_column(String(16))  # 2026-11
+    patch: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # 与规则配置 PUT 的格式相同
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # 样本数、各维度对比、改动说明
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending / applied / rejected / expired
+    rule_version: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 同意后生成的规则版本
