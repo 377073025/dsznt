@@ -22,6 +22,20 @@ models:
   main:  {model: claude-sonnet-5-5, effort: medium}
   light: {model: claude-haiku-5-5,  effort: low}
 
+# 按智能体单独指定模型（可选）。不写的智能体用代码里的默认角色。
+# 键：完整名（ceo.daily）优先，其次智能体名（ceo，对它的所有环节生效）。
+# 值：角色名，或 {role, model, effort} 中任意几项——先取角色的模型，再用 model / effort 覆盖。
+# 新模型需要先在 model_prices 里加价格，否则启动时报错。改完重启生效。
+#
+# 智能体与默认角色：
+#   ceo.daily / ceo.dispatch / ceo.accept / ceo.revise  → ceo
+#   ceo.chat、ops.diagnose、selection.recommend、exec.copy → main
+#   selection.same_product → light
+agent_models:
+  # ceo.chat: ceo                          # 问答也用最强模型
+  # ops: {effort: high}                    # 运营智能体全部环节加大思考量
+  # selection.same_product: {model: claude-sonnet-5-5, effort: low}
+
 # 每百万 token 价格（美元），用于成本计量
 model_prices:
   claude-opus-5-5:   {input: 4.0, output: 20.0, cache_read: 0.40}
@@ -35,6 +49,16 @@ budget:
   warn_ratio: 0.8
   # 超日预算时仍然照常执行的智能体（与拍板相关）
   critical_agents: [ceo.daily, ceo.dispatch, ceo.accept, ops.diagnose]
+
+# 单独任务（07 号文档 17.7 节）：与主流程隔离的预算、并发和网页读取额度
+adhoc:
+  daily_cny: 2                  # 单独任务每日 LLM 预算，不占主流程预算
+  max_concurrent: 1             # 单独通道同时运行数
+  web_blackout: "06:00-08:30"   # 主流程采集时段，单独任务不发起网页读取，顺延到时段结束
+  web_page_ratio: 0.2           # 单独任务可用的每日页数比例
+  browser_wait_minutes: 10      # 平台浏览器被主流程占用时最多等待多久
+  run_retention_days: 180
+  step_retention_days: 30
 
 agent_limits:
   max_turns: 6

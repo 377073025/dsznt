@@ -17,6 +17,7 @@ def init(db_url: str | None = None) -> None:
     import app.interfaces.feishu.handler  # noqa: F401
     import app.interfaces.feishu.messages  # noqa: F401
     import app.workflow.pipelines  # noqa: F401
+    import app.workflow.adhoc  # noqa: F401
     import app.workflow.timeouts  # noqa: F401
 
     with session_scope() as s:

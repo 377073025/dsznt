@@ -50,6 +50,19 @@ class DailyMetric(Base):
     source: Mapped[str] = mapped_column(String(16), default="")
 
 
+class ShopDailyMetric(Base):
+    """店铺每日汇总（order_stats 数据项）。"""
+
+    __tablename__ = "shop_daily_metric"
+    __table_args__ = (UniqueConstraint("day", name="uq_shop_metric_day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date)
+    orders: Mapped[int] = mapped_column(Integer, default=0)
+    gmv_fen: Mapped[int] = mapped_column(Integer, default=0)
+    refunds: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(16), default="")
+
+
 class ChangeEvent(Base):
     __tablename__ = "change_event"
     id: Mapped[int] = mapped_column(primary_key=True)

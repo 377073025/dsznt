@@ -10,11 +10,14 @@ from app.models.business import (  # noqa: F401
     ProductSnapshot,
     Report,
     Review,
+    ShopDailyMetric,
     Suggestion,
     Task,
     TestRun,
 )
+from app.models.runs import AgentRun, AgentRunStep  # noqa: F401
 from app.models.system import (  # noqa: F401
+    AdhocTask,
     Application,
     AuditLog,
     Capability,

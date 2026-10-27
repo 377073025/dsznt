@@ -73,6 +73,7 @@ class Job(Base, TimestampMixin):
     locked_by: Mapped[str] = mapped_column(String(64), default="")
     locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
+    lane: Mapped[str] = mapped_column(String(8), default="main")  # main / adhoc（07 号文档 17.4 节）
 
 
 class DomainEvent(Base):
@@ -167,7 +168,27 @@ class LlmUsage(Base):
     cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
     batch: Mapped[bool] = mapped_column(Boolean, default=False)
     cost_cny: Mapped[float] = mapped_column(Float, default=0.0)
+    lane: Mapped[str] = mapped_column(String(8), default="main")  # 单独任务的预算单独计
     at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdhocTask(Base, TimestampMixin):
+    """人工提交的单独任务（07 号文档 17.5 节）。结果只存在这里，转为建议 / 候选后才进入主流程。"""
+
+    __tablename__ = "adhoc_task"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent: Mapped[str] = mapped_column(String(32))
+    capability: Mapped[str] = mapped_column(String(64))
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(Text, default="")
+    submitted_by: Mapped[str] = mapped_column(String(64))
+    # queued / running / done / failed / cancelled / deferred / promoted
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+    promoted_to: Mapped[str] = mapped_column(String(64), default="")  # 例如 suggestion:12
 
 
 class AuditLog(Base):

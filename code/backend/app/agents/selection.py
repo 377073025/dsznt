@@ -38,29 +38,86 @@ SAME = AgentSpec(name="selection.same_product", model_role="light", output=SameP
 RECOMMEND = AgentSpec(name="selection.recommend", model_role="main", output=RecommendOut)
 
 
-def _sourcing(s: Session, services: Services):
+def sourcing(s: Session, services: Services):
     for ch, cap in (("api", "alibaba_api"), ("web", "alibaba_web")):
         if caps.is_healthy(s, cap) and services.sourcing.get(ch) is not None:
             return services.sourcing[ch]
     return None
 
 
-def scout_demands(s: Session, services: Services, week: str, category: str) -> list[Demand]:
-    """机会选品：热词趋势上升的词作为需求。市场工具不可用时，后续改用拼多多前台网页读取。"""
+class DemandDraft(BaseModel):
+    keyword: str
+    heat: float
+    trend: float
+    competition: float
+    competitors: list[dict]
+
+
+MIN_TREND = 0.1
+
+
+def find_demands(s: Session, services: Services, week: str, category: str, keyword: str = "") -> list[DemandDraft]:
+    """能力「选品 · 需求侦察」（只读）：热词趋势上升的词作为需求；给了 keyword 时只看包含它的词、不卡趋势门槛。"""
     if services.market is None or not caps.is_healthy(s, "market_tool"):
         return []
-    out = []
     ranking = services.market.category_ranking(category, week)
+    out = []
     for kw in services.market.hot_keywords(category, week):
-        if kw.trend <= 0.1:
+        if (keyword and keyword not in kw.keyword) or (not keyword and kw.trend <= MIN_TREND):
             continue
         matched = [r for r in ranking if kw.keyword in r.title] or ranking[:1]
-        d = Demand(week=week, keyword=kw.keyword, seed_type="opportunity", heat=kw.heat, trend=kw.trend,
-                   competitors=[{**r.model_dump(), "competition": kw.competition} for r in matched])
-        s.add(d)
-        s.flush()
-        out.append(d)
+        out.append(DemandDraft(keyword=kw.keyword, heat=kw.heat, trend=kw.trend, competition=kw.competition,
+                               competitors=[{**r.model_dump(), "competition": kw.competition} for r in matched]))
     return out
+
+
+def scout_demands(s: Session, services: Services, week: str, category: str) -> list[Demand]:
+    """机会选品：需求侦察结果写入需求表。市场工具不可用时，后续改用拼多多前台网页读取。"""
+    out = []
+    for d in find_demands(s, services, week, category):
+        demand = Demand(week=week, keyword=d.keyword, seed_type="opportunity", heat=d.heat, trend=d.trend,
+                        competitors=d.competitors)
+        s.add(demand)
+        s.flush()
+        out.append(demand)
+    return out
+
+
+def check_same(runner: AgentRunner, competitor_title: str, offer_title: str) -> SameProductOut:
+    return runner.run(SAME, f"竞品：{competitor_title}\n货源：{offer_title}\n判断是否同款。",
+                      context={"competitor": competitor_title, "offer": offer_title})
+
+
+def price_plan(sell_price_fen: int, detail: OfferDetail) -> dict:
+    p = R.profit(sell_price_fen, detail, get_settings().rules["selection"]["profit"])
+    return {"sell_price_fen": sell_price_fen, "cost_fen": p.cost_fen, "shipping_fen": p.shipping_fen,
+            "fees_fen": p.fees_fen, "profit_fen": p.profit_fen, "margin": round(p.margin, 3)}
+
+
+def score_offer(services: Services, detail: OfferDetail, sell_price_fen: int, heat: float, trend: float,
+                competition: float) -> tuple[float, dict]:
+    rules = get_settings().rules["selection"]
+    p = R.profit(sell_price_fen, detail, rules["profit"])
+    auto = services.dropship.check_auto_order(detail.offer_id).supported if services.dropship else None
+    return R.score(detail, p, heat, trend, competition, auto, fit=0.9, assets=0.6, weights=rules["score_weights"])
+
+
+def write_recommendation(runner: AgentRunner, offer_title: str, supplier_years: int, ship_48h_rate: float,
+                         keyword: str, trend: float, plan: dict, total: float) -> RecommendOut:
+    """推荐理由：数字全部由程序给出，模型只组织语言。"""
+    facts = FactTable()
+    facts.add("plan.sell_price_yuan", plan["sell_price_fen"] / 100)
+    facts.add("plan.cost_yuan", plan["cost_fen"] / 100)
+    facts.add("plan.profit_yuan", plan["profit_fen"] / 100)
+    facts.add("plan.margin_pct", round(plan["margin"] * 100, 1))
+    facts.add("cand.score", total)
+    facts.add("demand.trend_pct", round(trend * 100, 1))
+    facts.add("supplier.years", supplier_years)
+    facts.add("supplier.ship_48h_pct", round(ship_48h_rate * 100, 1))
+    facts.ignore_strings.update({offer_title, keyword, "48小时", "48 小时"})
+    return runner.run(RECOMMEND, "请为这款候选写推荐理由（「建议上新……，因为……」）与风险提示。\n" + facts.as_prompt_lines()
+                      + f"\n需求词：{keyword}\n货源：{offer_title}",
+                      facts=facts, context={"keyword": keyword, "offer_title": offer_title})
 
 
 def _upsert_offer(s: Session, d: OfferDetail) -> Offer:
@@ -78,7 +135,7 @@ def _upsert_offer(s: Session, d: OfferDetail) -> Offer:
 
 def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, category: str) -> list[Candidate]:
     rules = get_settings().rules["selection"]
-    source = _sourcing(s, services)
+    source = sourcing(s, services)
     if source is None:
         return []
     recommended: list[tuple[float, Candidate]] = []
@@ -98,8 +155,7 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
                 continue
             transition(s, "candidate", cand.id, "filter", SELECTOR)
 
-            same = runner.run(SAME, f"竞品：{competitor['title']}\n货源：{detail.title}\n判断是否同款。",
-                              context={"competitor": competitor["title"], "offer": detail.title})
+            same = check_same(runner, competitor["title"], detail.title)
             cand.same_conf = same.confidence
             if not same.same_product or same.confidence < SAME_PRODUCT_MIN_CONF:
                 cand.reject_reason = "同款置信度不足：" + "；".join(same.concerns)
@@ -107,13 +163,10 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
                 continue
             transition(s, "candidate", cand.id, "verify", SELECTOR)
 
-            p = R.profit(sell_price, detail, rules["profit"])
-            auto = services.dropship.check_auto_order(detail.offer_id).supported if services.dropship else None
-            total, breakdown = R.score(detail, p, demand.heat, demand.trend, competitor.get("competition", 0.5),
-                                       auto, fit=0.9, assets=0.6, weights=rules["score_weights"])
+            total, breakdown = score_offer(services, detail, sell_price, demand.heat, demand.trend,
+                                           competitor.get("competition", 0.5))
             cand.score, cand.breakdown = total, breakdown
-            cand.price_plan = {"sell_price_fen": sell_price, "cost_fen": p.cost_fen, "shipping_fen": p.shipping_fen,
-                               "fees_fen": p.fees_fen, "profit_fen": p.profit_fen, "margin": round(p.margin, 3)}
+            cand.price_plan = price_plan(sell_price, detail)
             transition(s, "candidate", cand.id, "score", SELECTOR)
             if total < rules["candidate_min_score"]:
                 cand.reject_reason = f"得分 {total} 低于 {rules['candidate_min_score']}"
@@ -126,20 +179,8 @@ def run_weekly(runner: AgentRunner, s: Session, services: Services, week: str, c
     for total, cand in recommended[: rules["weekly_max_recommend"]]:
         offer = s.get(Offer, cand.offer_id)
         demand = s.get(Demand, cand.demand_id)
-        facts = FactTable()
-        pp = cand.price_plan
-        facts.add("plan.sell_price_yuan", pp["sell_price_fen"] / 100)
-        facts.add("plan.cost_yuan", pp["cost_fen"] / 100)
-        facts.add("plan.profit_yuan", pp["profit_fen"] / 100)
-        facts.add("plan.margin_pct", round(pp["margin"] * 100, 1))
-        facts.add("cand.score", total)
-        facts.add("demand.trend_pct", round(demand.trend * 100, 1))
-        facts.add("supplier.years", offer.supplier_years)
-        facts.add("supplier.ship_48h_pct", round(offer.ship_48h_rate * 100, 1))
-        facts.ignore_strings.update({offer.title, demand.keyword, "48小时", "48 小时"})
-        rec = runner.run(RECOMMEND, "请为这款候选写推荐理由（「建议上新……，因为……」）与风险提示。\n" + facts.as_prompt_lines()
-                         + f"\n需求词：{demand.keyword}\n货源：{offer.title}",
-                         facts=facts, context={"keyword": demand.keyword, "offer_title": offer.title})
+        rec = write_recommendation(runner, offer.title, offer.supplier_years, offer.ship_48h_rate,
+                                   demand.keyword, demand.trend, cand.price_plan, total)
         cand.reason, cand.risks = rec.reason, rec.risks
         transition(s, "candidate", cand.id, "recommend", SELECTOR)
         out.append(cand)

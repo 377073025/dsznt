@@ -26,6 +26,25 @@ def _verdict(before: float, after: float) -> str:
     return "无明显变化"
 
 
+def compare_event(s: Session, ev: ChangeEvent, n: int) -> tuple[dict, dict, str]:
+    """改动前后各 n 天的指标与结论（只读）。"""
+    rows = [r for r in queries.day_rows(s, ev.occurred_on + timedelta(days=n), n * 2 + 1) if r.goods_id == ev.goods_id]
+    before = window(rows, ev.occurred_on - timedelta(days=1), n)
+    after = window(rows, ev.occurred_on + timedelta(days=n), n)
+    def w(x):
+        return {"visitors": x.visitors, "orders": x.orders, "cvr_pct": round(x.cvr * 100, 1)}
+    return w(before), w(after), _verdict(before.cvr, after.cvr)
+
+
+def trial_stats(s: Session, goods_id: str, start: date, days: int) -> tuple[int, float, float]:
+    """测款期内（start 起 days 天）该商品的访客、转化率，以及同期店铺其他商品的平均转化率。"""
+    end = start + timedelta(days=days - 1)
+    rows = queries.day_rows(s, end, days)
+    mine = window([r for r in rows if r.goods_id == goods_id], end, days)
+    shop = window([r for r in rows if r.goods_id != goods_id], end, days)
+    return mine.visitors, mine.cvr, shop.cvr
+
+
 def run_due_reviews(s: Session, day: date) -> list[Review]:
     """改动满观察期（默认 7 天）后，对比改动前后各 N 天的转化率。"""
     n = get_settings().rules["ops"]["review_window_days"]
@@ -35,15 +54,8 @@ def run_due_reviews(s: Session, day: date) -> list[Review]:
     for ev in events:
         if ev.id in reviewed:
             continue
-        rows = [r for r in queries.day_rows(s, ev.occurred_on + timedelta(days=n), n * 2 + 1) if r.goods_id == ev.goods_id]
-        before = window(rows, ev.occurred_on - timedelta(days=1), n)
-        after = window(rows, ev.occurred_on + timedelta(days=n), n)
-        rv = Review(
-            change_event_id=ev.id, window_days=n,
-            before={"visitors": before.visitors, "orders": before.orders, "cvr_pct": round(before.cvr * 100, 1)},
-            after={"visitors": after.visitors, "orders": after.orders, "cvr_pct": round(after.cvr * 100, 1)},
-            verdict=_verdict(before.cvr, after.cvr),
-        )
+        before, after, verdict = compare_event(s, ev, n)
+        rv = Review(change_event_id=ev.id, window_days=n, before=before, after=after, verdict=verdict)
         s.add(rv)
         out.append(rv)
         if ev.task_id:
@@ -73,12 +85,9 @@ def run_due_trials(s: Session, day: date) -> list[tuple[TestRun, float]]:
     due = s.scalars(select(TestRun).where(TestRun.verdict == "", TestRun.start_date <= day - timedelta(days=days - 1))).all()
     out = []
     for tr in due:
-        end = tr.start_date + timedelta(days=days - 1)
-        rows = queries.day_rows(s, end, days)
-        mine = window([r for r in rows if r.goods_id == tr.goods_id], end, days)
-        shop = window([r for r in rows if r.goods_id != tr.goods_id], end, days)
-        tr.visitors, tr.cvr = mine.visitors, round(mine.cvr, 4)
-        tr.verdict = trial_verdict(mine.visitors, mine.cvr, shop.cvr, cfg)
-        out.append((tr, shop.cvr))
+        visitors, cvr, shop_cvr = trial_stats(s, tr.goods_id, tr.start_date, days)
+        tr.visitors, tr.cvr = visitors, round(cvr, 4)
+        tr.verdict = trial_verdict(visitors, cvr, shop_cvr, cfg)
+        out.append((tr, shop_cvr))
     s.flush()
     return out

@@ -7,7 +7,7 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -e .[dev]
-.venv\Scripts\python -m pytest -q          # 64 个测试（约 45 秒，其中 25 秒是导入飞书 SDK）
+.venv\Scripts\python -m pytest -q          # 84 个测试（需要 Python ≥ 3.11）
 .venv\Scripts\python scripts\demo_run.py   # 演示：海盐换图闭环 + 周选品 + 上新，打印飞书卡片
 ```
 
@@ -33,9 +33,9 @@ worker 会在主线程跑飞书长连接（SDK 要求），作业循环在后台
 | `app/capabilities.py` | 能力开关：状态、健康检查、与申请编号 R01–R15 的对应 |
 | `app/data/` | 通道路由（API → 网页 → 人工）、校验、入库、快照对比、人工导入、网页读取层（脚本、白名单、风控识别、AI 认路） |
 | `app/rules/` | 纯函数：指标、异常检测、硬性过滤、利润、打分、测款判定 |
-| `app/agents/` | 统一运行器（工具循环、结构化输出、数字一致性校验）与运营 / CEO / 选品 / 执行智能体 |
+| `app/agents/` | 统一运行器（工具循环、结构化输出、数字一致性校验、运行记录）与运营 / CEO / 选品 / 执行智能体；`catalog.py` 是可单独调用的能力目录，`status.py` 计算各智能体当前状态 |
 | `app/tools/` | 工具注册表：readonly / internal / shop 三级，写店铺前再校验写入确认 |
-| `app/workflow/` | 状态机、领域事件、作业队列、编排 |
+| `app/workflow/` | 状态机、领域事件、作业队列（主通道 / 单独通道）、编排、单独任务（`adhoc.py`） |
 | `app/interfaces/feishu/` | 卡片、回调处理（3 秒内返回 + 异步执行）、通知 |
 | `app/main.py` / `app/worker.py` | web 与 worker 入口 |
 | `app/prompts/` | 各智能体提示词（带版本号） |

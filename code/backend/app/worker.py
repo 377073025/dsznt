@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.db import session_scope, utcnow
 from app.llm.gateway import Gateway
 from app.services import get_services
+from app.agents.tracking import recover_stale_runs
 from app.workflow.jobs import enqueue, recover_stale, run_until_idle
 
 log = logging.getLogger("worker")
@@ -69,33 +70,49 @@ def main() -> None:
     recovered = recover_stale()
     if recovered:
         log.info("recovered %s stale jobs", recovered)
+    _recover_adhoc()
     services = get_services()
     gateway = Gateway(services.llm)
     sched = build_scheduler()
     sched.start()
     log.info("worker started (mode=%s)", services.mode)
 
-    def job_loop() -> None:
+    def job_loop(lane: str) -> None:
+        """两个通道各一个循环（07 号文档 17.4 节）：主流程作业永远不排在单独任务后面。事件只由主通道分发。"""
         while True:
             try:
-                if not run_until_idle(services, gateway, max_rounds=50):
+                if not run_until_idle(services, gateway, max_rounds=50, lanes=(lane,), dispatch=lane == "main"):
                     time.sleep(1)
             except Exception:  # noqa: BLE001  单轮出错不让循环退出
-                log.exception("job loop error")
+                log.exception("job loop error (%s)", lane)
                 time.sleep(5)
 
+    # 单独通道同一时间只跑 1 个（adhoc.max_concurrent），一个线程即可保证
+    threading.Thread(target=job_loop, args=("adhoc",), name="jobs-adhoc", daemon=True).start()
     try:
         if services.mode == "real" and services.feishu is not None:
             # 飞书长连接必须在主线程；作业循环放后台线程
             from app.interfaces.feishu.longconn import run_forever
             from app.secrets import get_secret
 
-            threading.Thread(target=job_loop, name="jobs", daemon=True).start()
+            threading.Thread(target=job_loop, args=("main",), name="jobs-main", daemon=True).start()
             run_forever(get_secret("feishu_app_id"), get_secret("feishu_app_secret"))
         else:
-            job_loop()
+            job_loop("main")
     except KeyboardInterrupt:
         sched.shutdown()
+
+
+def _recover_adhoc() -> None:
+    """重启时：中断的运行记录标记失败；运行中的单独任务标记失败，可重新提交（不自动重跑）。"""
+    from app.models import AdhocTask
+
+    n = recover_stale_runs()
+    with session_scope() as s:
+        for t in s.query(AdhocTask).filter(AdhocTask.status == "running"):
+            t.status, t.error = "failed", "worker 重启，运行中断，可重新提交"
+    if n:
+        log.info("marked %s interrupted agent runs as failed", n)
 
 
 if __name__ == "__main__":

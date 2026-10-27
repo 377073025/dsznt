@@ -15,6 +15,7 @@ class LLMRequest(BaseModel):
     tools: list[dict[str, Any]] = Field(default_factory=list)
     output_schema: dict[str, Any] | None = None
     max_tokens: int = 8000
+    lane: str = "main"  # 主流程 / 单独任务分别计预算
     # 只给模拟实现看的上下文（不发给模型服务）
     context: dict[str, Any] = Field(default_factory=dict)
 

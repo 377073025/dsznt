@@ -21,8 +21,12 @@ from app.data.channels import manual_import
 from app.db import session_scope
 from app.interfaces.feishu.handler import get_or_register
 from app.llm.gateway import Gateway
-from app.models import Application, Capability, Job, Report, Shop, Suggestion, Task, User
+from app.agents import status as agent_status
+from app.agents.catalog import AGENT_TITLES, CATALOG
+from app.models import AdhocTask, Application, Capability, Job, Report, Shop, Suggestion, Task, User
 from app.secrets import set_secret
+from app.services import get_services
+from app.workflow import adhoc
 from app.workflow.jobs import enqueue
 from app.workflow.state_machine import MODELS, Actor, can
 
@@ -158,6 +162,96 @@ async def upload_import(file: UploadFile = File(...), s: Session = Depends(db), 
     shop = s.scalar(select(Shop).order_by(Shop.id))
     rec = manual_import.import_file(s, shop, path, user.feishu_open_id)
     return {"status": rec.status, "rows": rec.rows, "parser": rec.parser, "errors": rec.error_rows[:20]}
+
+
+# ---------- 智能体工作台（07 号文档 17.6 节）。Web 每 5 秒轮询 ----------
+
+@app.get("/api/agents")
+def list_agents(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    return agent_status.agents_status(s)
+
+
+@app.get("/api/agents/{agent}/runs")
+def agent_runs(agent: str, source: str | None = None, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+    if agent not in AGENT_TITLES:
+        raise HTTPException(404, "未知智能体")
+    return agent_status.runs_of(agent, source, min(limit, 200), offset)
+
+
+@app.get("/api/runs/{run_id}")
+def run_detail(run_id: int) -> dict[str, Any]:
+    d = agent_status.run_detail(run_id)
+    if d is None:
+        raise HTTPException(404, "运行记录不存在")
+    return d
+
+
+@app.get("/api/agent-capabilities")
+def list_agent_capabilities() -> list[dict[str, Any]]:
+    """可单独调用的智能体能力与参数表单（/api/capabilities 已用于能力开关，所以换个路径）。"""
+    return [{"key": c.key, "agent": c.agent, "title": c.title, "description": c.description,
+             "params_schema": c.params.model_json_schema(), "uses_web": sorted(c.uses_web), "promote_to": c.promote_to}
+            for c in CATALOG.values() if c.adhoc]
+
+
+class AdhocIn(BaseModel):
+    capability: str
+    params: dict[str, Any] = {}
+    note: str = ""
+
+
+def _adhoc_dict(t: AdhocTask) -> dict[str, Any]:
+    return {"id": t.id, "agent": t.agent, "capability": t.capability, "title": CATALOG[t.capability].title,
+            "params": t.params, "note": t.note, "submitted_by": t.submitted_by, "status": t.status, "error": t.error,
+            "result": t.result, "run_id": t.run_id, "promoted_to": t.promoted_to,
+            "created_at": t.created_at.isoformat(), "updated_at": t.updated_at.isoformat()}
+
+
+@app.post("/api/adhoc")
+def submit_adhoc(body: AdhocIn, s: Session = Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    from pydantic import ValidationError
+
+    try:
+        return _adhoc_dict(adhoc.submit(s, user, body.capability, body.params, body.note))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValidationError as e:
+        raise HTTPException(422, e.errors(include_url=False)) from e
+    except adhoc.AdhocError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/adhoc")
+def list_adhoc(status: str | None = None, s: Session = Depends(db)) -> list[dict[str, Any]]:
+    q = select(AdhocTask).order_by(AdhocTask.id.desc())
+    if status:
+        q = q.where(AdhocTask.status == status)
+    return [_adhoc_dict(t) for t in s.scalars(q.limit(100))]
+
+
+@app.post("/api/adhoc/{task_id}/cancel")
+def cancel_adhoc(task_id: int, s: Session = Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    try:
+        return _adhoc_dict(adhoc.cancel(s, user, task_id))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except adhoc.AdhocError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+class PromoteIn(BaseModel):
+    indexes: list[int] | None = None  # 诊断结果里要转的建议序号；不填为全部
+
+
+@app.post("/api/adhoc/{task_id}/promote")
+def promote_adhoc(task_id: int, body: PromoteIn | None = None, s: Session = Depends(db),
+                  user: User = Depends(current_user)) -> dict[str, Any]:
+    try:
+        return {"promoted_to": adhoc.promote(s, get_services(), user, task_id, body.indexes if body else None)}
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except adhoc.AdhocError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post("/api/jobs/{job_type}")

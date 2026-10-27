@@ -20,6 +20,14 @@ class Base(DeclarativeBase):
     pass
 
 
+class RunBase(DeclarativeBase):
+    """运行记录库（agent_run / agent_run_step）。
+
+    单独放一个 SQLite 文件：运行记录要在作业的业务事务进行中实时写入、立即可见，且业务回滚时不能丢；
+    SQLite 同一文件只有一个写者，和业务表放一起会互相锁住。PostgreSQL 下两者可以用同一个库。
+    """
+
+
 class TimestampMixin:
     """所有业务表带 created_at / updated_at / version（乐观锁）。"""
 
@@ -34,11 +42,23 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=5000")
         cur.close()
 
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
+_runs_engine: Engine | None = None
+_RunsSession: sessionmaker[Session] | None = None
+
+
+def runs_url_for(url: str) -> str:
+    """运行记录库地址：SQLite 时与业务库同目录的 <名字>.runs.db；其他数据库与业务库相同。"""
+    if url.startswith("sqlite:///") and ":memory:" not in url:
+        path = url.removeprefix("sqlite:///")
+        stem = path[:-3] if path.endswith(".db") else path
+        return f"sqlite:///{stem}.runs.db"
+    return url
 
 
 def init_engine(url: str | None = None) -> Engine:
@@ -60,6 +80,9 @@ def init_engine(url: str | None = None) -> Engine:
             conn.exec_driver_sql("BEGIN")
 
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    global _runs_engine, _RunsSession
+    _runs_engine = create_engine(runs_url_for(url), future=True)
+    _RunsSession = sessionmaker(bind=_runs_engine, expire_on_commit=False)
     return _engine
 
 
@@ -67,10 +90,28 @@ def create_all() -> None:
     import app.models  # noqa: F401  注册所有表
 
     Base.metadata.create_all(get_engine())
+    RunBase.metadata.create_all(_runs_engine)
 
 
 def get_engine() -> Engine:
     return _engine or init_engine()
+
+
+@contextmanager
+def runs_scope() -> Iterator[Session]:
+    """运行记录库的短事务。"""
+    if _RunsSession is None:
+        init_engine()
+    assert _RunsSession is not None
+    s = _RunsSession()
+    try:
+        yield s
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
 
 
 @contextmanager

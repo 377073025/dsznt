@@ -26,6 +26,11 @@ class ToolContext:
     services: Services
     agent: str
     task_id: int | None = None
+    lane: str = "main"  # adhoc 时只能用只读工具（07 号文档 17.5 节）
+
+
+class ToolDenied(PermissionError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -40,6 +45,11 @@ class ToolDef:
         return {"name": self.name, "description": self.description, "input_schema": strict_json_schema(self.params)}
 
     def invoke(self, ctx: ToolContext, raw_input: dict[str, Any]) -> str:
+        if ctx.lane == "adhoc" and self.level != "readonly":
+            from app.workflow.events import audit
+
+            audit(ctx.session, f"agent:{ctx.agent}", "tool.denied", f"tool:{self.name}", {"lane": ctx.lane, "level": self.level})
+            raise ToolDenied(f"单独任务不能使用 {self.level} 级工具 {self.name}")
         args = self.params.model_validate(raw_input)
         out = self.fn(ctx, args)
         if isinstance(out, BaseModel):

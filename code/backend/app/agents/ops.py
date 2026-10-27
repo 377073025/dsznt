@@ -49,13 +49,16 @@ SPEC = AgentSpec(
 )
 
 
-def build_input(s: Session, day: date, days: int = 7) -> tuple[str, FactTable, dict]:
+def build_input(s: Session, day: date, days: int = 7, goods_id: str = "") -> tuple[str, FactTable, dict]:
+    """goods_id 为空时看整店，否则只看这一个商品（单独任务）。"""
     cfg = get_settings().rules["ops"]
     rows = queries.day_rows(s, day, days * 2)
     facts = FactTable()
     facts.add("window.days", days)
     goods_ctx, lines = [], []
     for p in queries.products(s):
+        if goods_id and p.goods_id != goods_id:
+            continue
         facts.ignore_strings.update({p.name, p.title})
         c = compare(rows, p.goods_id, day, days)
         k = p.goods_id
@@ -86,9 +89,14 @@ def build_input(s: Session, day: date, days: int = 7) -> tuple[str, FactTable, d
     return content, facts, {"goods": goods_ctx, "day": day.isoformat()}
 
 
+def diagnose(runner: AgentRunner, s: Session, day: date, goods_id: str = "", days: int = 7) -> OpsDiagnosis:
+    """能力「运营 · 诊断」：只读，不写建议表。"""
+    content, facts, ctx = build_input(s, day, days, goods_id)
+    return runner.run(SPEC, content, facts=facts, context=ctx)
+
+
 def run(runner: AgentRunner, s: Session, shop: Shop, day: date) -> list[Suggestion]:
-    content, facts, ctx = build_input(s, day)
-    out = runner.run(SPEC, content, facts=facts, context=ctx)
+    out = diagnose(runner, s, day)
     limit = get_settings().rules["ops"]["max_suggestions_per_report"]
     created = []
     for x in out.suggestions[:limit]:
