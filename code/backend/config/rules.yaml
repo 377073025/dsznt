@@ -25,6 +25,7 @@ selection:
     brand_words: [香奈儿, 迪奥, 祖玛珑, Jo Malone, 野格, 无印良品, MUJI, 宜家, IKEA, 迪士尼, Disney, 漫威, 三丽鸥,
                   Hello Kitty, 哆啦A梦, 皮卡丘, 宝可梦, 小黄人, 大牌同款, 专柜正品, 原单, 高仿, 复刻]
     llm_review: true
+    max_images: 3        # 交模型看图的张数（只发网络图片地址）；0 = 只看文字
   candidate_min_score: 70
   weekly_max_recommend: 5
   profit:

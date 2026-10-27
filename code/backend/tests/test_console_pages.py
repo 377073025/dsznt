@@ -86,3 +86,23 @@ def test_integrations_permissions(env):
         a = apps[0]["id"]
         assert c.patch(f"/api/applications/{a}", json={"status": "doing"}, headers={"X-Open-Id": "ou_v"}).status_code == 403
         assert c.patch(f"/api/applications/{a}", json={"status": "doing", "note": "已提交"}, headers=H_OP).json()["status"] == "doing"
+
+
+def test_asset_thumbnails_only_from_assets_dir(env, tmp_path, monkeypatch):
+    from app.agents.executors import record_asset
+    from app.config import get_settings
+
+    backfill(env[0], DAY, 1)
+    monkeypatch.setitem(get_settings().raw["paths"], "assets_dir", str(tmp_path / "assets"))
+    (tmp_path / "assets" / "g_haiyan").mkdir(parents=True)
+    (tmp_path / "assets" / "g_haiyan" / "v1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (tmp_path / "secret.png").write_bytes(b"x")
+    with session_scope() as s:
+        ids = [record_asset(s, "g_haiyan", "main", p, "ai").id for p in
+               ("g_haiyan/v1.png", "missing.jpg", "../secret.png", "https://img.example.com/a.jpg")]
+    with _client() as c:
+        got = {a["id"]: a["url"] for p in c.get("/api/catalog", headers=H_OP).json() for a in p["assets"]}
+        assert [got[i] for i in ids] == [f"/api/assets/{ids[0]}/file", None, None, "https://img.example.com/a.jpg"]
+        r = c.get(f"/api/assets/{ids[0]}/file")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+        assert c.get(f"/api/assets/{ids[2]}/file").status_code == 404

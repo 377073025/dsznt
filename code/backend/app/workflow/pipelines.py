@@ -216,8 +216,19 @@ def _need_human(s: Session, title: str, body: str, entity: str, entity_id: int, 
 @subscribe("fetch.manual_requested")
 def _on_manual(s: Session, ev: DomainEvent) -> None:
     p = ev.payload
-    _need_human(s, "请导出数据", f"{p['day']} 的 {p['item']} 自动获取失败，请按指引导出「{p['template']}」后直接发给我。\n指引：{p['guide']}",
-                "fetch_job", ev.entity_id)
+    _need_human(s, "请导出数据", f"{p['day']} 的 {p['item']} 自动获取失败，请按指引导出「{p['template']}」后直接发给我。\n"
+                + _guide_text(p["guide"]), "fetch_job", ev.entity_id)
+
+
+def _guide_text(guide: str) -> str:
+    """导出指引正文（去掉标题行）；文件不存在时只给路径。"""
+    from app.config import CONFIG_DIR
+
+    path = CONFIG_DIR / guide
+    if not guide or not path.is_file():
+        return f"指引：{guide}"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return "\n".join(x for x in lines if not x.startswith("# ")).strip()
 
 
 @subscribe("fetch.waiting_human")

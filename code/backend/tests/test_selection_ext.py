@@ -47,6 +47,31 @@ def test_compliance_brand_words_skip_model(env):
         assert not out.passed and out.risk_level == "high"  # 词库没命中，交模型判断
 
 
+
+def test_compliance_looks_at_web_images(env):
+    services, gateway = env
+    urls = [f"https://cbu01.alicdn.com/img/{i}.jpg" for i in range(5)]
+    d = fixtures.offer_detail("1688_6543210").model_copy(update={"image_urls": ["local.jpg", *urls]})
+    with session_scope() as s:
+        runner = AgentRunner(s, services, gateway)
+        assert selection.check_compliance(runner, d).passed
+        content = services.llm.requests[-1].messages[0]["content"]
+        assert [b["source"]["url"] for b in content if b["type"] == "image"] == urls[:3]  # 只发网络图片，最多 max_images 张
+        assert "商标" in content[-1]["text"]
+
+        calls = []
+
+        def flaky(req):  # 图片取不到时模型服务报错 → 退回只看文字
+            calls.append(req)
+            if isinstance(req.messages[0]["content"], list):
+                raise RuntimeError("image fetch failed")
+            return {"passed": True, "risk_level": "low", "issues": []}
+
+        services.llm.responders["selection.compliance"] = flaky
+        assert selection.check_compliance(runner, d).passed
+        assert [type(c.messages[0]["content"]) for c in calls] == [list, str]
+
+
 def _revise_candidate(services, gateway, feedback):
     with session_scope() as s:
         cand = s.query(Candidate).filter_by(status="recommended").one()

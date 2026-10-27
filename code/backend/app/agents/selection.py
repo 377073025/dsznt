@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,11 +14,14 @@ from app import capabilities as caps
 from app.adapters.types import OfferDetail, OfferFilter
 from app.agents.facts import FactTable
 from app.agents.runtime import AgentRunner, AgentSpec
+from app.agents.tracking import RunCancelled
 from app.config import get_settings
 from app.models import Candidate, Demand, Offer
 from app.rules import selection as R
 from app.services import Services
 from app.workflow.state_machine import Actor, transition
+
+log = logging.getLogger(__name__)
 
 SELECTOR = Actor("agent", "selection")
 SAME_PRODUCT_MIN_CONF = 0.8
@@ -45,10 +50,16 @@ COMPLIANCE = AgentSpec(name="selection.compliance", model_role="main", output=Co
 RECOMMEND = AgentSpec(name="selection.recommend", model_role="main", output=RecommendOut)
 
 
-def sourcing(s: Session, services: Services):
+def sourcing(s: Session, services: Services, allow_manual: bool = False):
+    """1688 货源通道：开放平台 → 网页读取；allow_manual 时再退到手工录入的货源（不是实时数据）。"""
     for ch, cap in (("api", "alibaba_api"), ("web", "alibaba_web")):
         if caps.is_healthy(s, cap) and services.sourcing.get(ch) is not None:
             return services.sourcing[ch]
+    if allow_manual:
+        from app.adapters.alibaba1688.manual import ManualSourcing, manual_offers
+
+        if manual_offers(s):
+            return ManualSourcing(s)
     return None
 
 
@@ -142,10 +153,21 @@ def check_compliance(runner: AgentRunner, detail: OfferDetail) -> ComplianceOut:
         return ComplianceOut(passed=False, risk_level="high", issues=[f"标题含品牌 / IP 词：{'、'.join(hits)}"])
     if not cfg.get("llm_review", True):
         return ComplianceOut(passed=True, risk_level="low", issues=[])
-    return runner.run(COMPLIANCE, (
-        f"请审查这个 1688 货源能否在拼多多上架（只看商品风险：品牌或 IP 侵权、外观专利、盗用他人图片、描述夸大）。\n"
-        f"标题：{detail.title}\n类目：{detail.category}\n图片：{'、'.join(detail.image_urls) or '无'}"
-    ), context={"title": detail.title, "category": detail.category, "images": detail.image_urls})
+    text = (f"请审查这个 1688 货源能否在拼多多上架（只看商品风险：品牌或 IP 侵权、外观专利、盗用他人图片、描述夸大）。\n"
+            f"标题：{detail.title}\n类目：{detail.category}\n图片：{'、'.join(detail.image_urls) or '无'}")
+    ctx = {"title": detail.title, "category": detail.category, "images": detail.image_urls}
+    images = [u for u in detail.image_urls if u.startswith(("http://", "https://"))][: cfg.get("max_images", 3)]
+    if not images:
+        return runner.run(COMPLIANCE, text, context=ctx)
+    blocks = [{"type": "image", "source": {"type": "url", "url": u}} for u in images]
+    blocks.append({"type": "text", "text": text + "\n上面是前几张商品图，请一并看图里的商标、IP 形象、水印和他人店铺标识。"})
+    try:
+        return runner.run(COMPLIANCE, blocks, context={**ctx, "viewed_images": images})
+    except RunCancelled:
+        raise
+    except Exception as e:  # noqa: BLE001  图片取不到（防盗链、过期）时退回只看文字，不让整轮选品失败
+        log.warning("合规审查看图失败，改为只看文字：%s", e)
+        return runner.run(COMPLIANCE, text, context=ctx)
 
 
 def price_plan(sell_price_fen: int, detail: OfferDetail) -> dict:
@@ -189,7 +211,8 @@ def _upsert_offer(s: Session, d: OfferDetail) -> Offer:
     for f in ("title", "category", "price_fen", "shipping_fen", "dropship", "stock", "ship_48h_rate",
               "repurchase_rate", "return_rate", "supplier_years", "weight_kg", "longest_side_cm", "image_urls"):
         setattr(o, f, getattr(d, f))
-    o.raw = d.model_dump()
+    o.raw = {**({"manual": True, "entered_by": o.raw["entered_by"]} if (o.raw or {}).get("manual") else {}),
+             **d.model_dump(mode="json")}
     s.flush()  # 先落盘货源，候选表的外键才能引用
     return o
 

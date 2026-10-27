@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -44,6 +45,16 @@ def _str(v: str) -> str:
     return str(v).strip()
 
 
+def _min_fen(v: str) -> int:
+    """多规格商品的价格是区间「19.90-29.90」，取最低价。"""
+    return min(_fen(x) for x in str(v).replace("～", "-").replace("~", "-").split("-") if x.strip())
+
+
+def _image_hash(v: str) -> str:
+    """主图地址 → 短哈希，只用来判断主图换没换。"""
+    return hashlib.sha1(str(v).strip().split("?")[0].encode()).hexdigest()[:16]
+
+
 @dataclass(frozen=True)
 class Parser:
     name: str
@@ -51,6 +62,10 @@ class Parser:
     # 表头 → (字段名, 转换函数)；required 全部出现才算匹配，optional 有就读
     required: dict[str, tuple[str, Callable[[str], Any]]]
     optional: dict[str, tuple[str, Callable[[str], Any]]] = field(default_factory=dict)
+    # 商品列表这类导出没有日期列：记到等待人工导入的那一天，没有就记到今天
+    dated: bool = True
+    # 缺省值：导出里没有的必填字段
+    defaults: dict[str, Any] = field(default_factory=dict)
 
     def matches(self, header: list[str]) -> bool:
         return set(self.required) <= set(header)
@@ -67,6 +82,14 @@ PARSERS = [
         "pdd_order_stats_v1", "order_stats",
         required={"日期": ("day", _day), "成交订单数": ("orders", _int), "成交金额": ("gmv_fen", _fen)},
         optional={"退款订单数": ("refunds", _int)},
+    ),
+    Parser(
+        "pdd_goods_list_v1", "goods_snapshot",
+        required={"商品ID": ("goods_id", _str), "商品名称": ("title", _str), "拼单价": ("price_fen", _min_fen)},
+        optional={"商品主图": ("main_image_hash", _image_hash)},
+        dated=False,
+        # 没有主图列时用固定值：不会误判「换了主图」
+        defaults={"main_image_hash": "-"},
     ),
 ]
 
@@ -107,11 +130,12 @@ def import_file(s: Session, shop: Shop, path: Path, uploaded_by: str) -> ManualI
     schema = getattr(T, idef.schema)
     cols = {**parser.optional, **parser.required}
     latest_ok = (utcnow() + timedelta(hours=8)).date()
+    undated_day = None if parser.dated else _pending_day(s, parser.item) or latest_ok
 
     by_day: dict[date, list] = defaultdict(list)
     errors: list[dict[str, Any]] = []
     for line_no, row in enumerate(rows[1:], start=2):  # 第 1 行是表头
-        values: dict[str, Any] = {}
+        values: dict[str, Any] = dict(parser.defaults)
         try:
             for i, h in enumerate(header):
                 if h in cols and i < len(row) and str(row[i]).strip() != "":
@@ -120,17 +144,20 @@ def import_file(s: Session, shop: Shop, path: Path, uploaded_by: str) -> ManualI
                         values[key] = conv(row[i])
                     except ValueError as e:
                         raise ValueError(f"{h} 格式不对：{row[i]}") from e
+            if not parser.dated:
+                values.setdefault("name", values.get("title", ""))
             obj = schema.model_validate(values)
         except Exception as e:  # noqa: BLE001
             errors.append({"row": line_no, "error": str(e).splitlines()[0][:200]})
             continue
+        day = obj.day if parser.dated else undated_day
         err = store.check_record(idef, obj)
-        if err is None and obj.day > latest_ok:
-            err = f"日期 {obj.day} 在未来"
+        if err is None and day > latest_ok:
+            err = f"日期 {day} 在未来"
         if err:
             errors.append({"row": line_no, "error": err})
             continue
-        by_day[obj.day].append(obj)
+        by_day[day].append(obj)
 
     if errors or not by_day:
         rec.status, rec.error_rows = "invalid", errors or [{"row": 0, "error": "没有数据行"}]
@@ -143,6 +170,12 @@ def import_file(s: Session, shop: Shop, path: Path, uploaded_by: str) -> ManualI
     rec.status = "imported"
     s.flush()
     return rec
+
+
+def _pending_day(s: Session, item: str) -> date | None:
+    """最近一个在等人工导入的日期。"""
+    return s.scalar(select(FetchJob.day).where(FetchJob.item == item, FetchJob.status == "manual_requested")
+                    .order_by(FetchJob.day.desc()))
 
 
 def _mark_success(s: Session, item: str, day: date, rows: int) -> None:

@@ -174,6 +174,9 @@ tr.detail-row > td { background: var(--bg); }
 .rule-grid textarea { grid-column: 1 / -1; }
 label.check { display: flex; align-items: center; gap: 6px; }
 label.check input { width: auto; order: -1; }
+.rule-grid label.wide { grid-column: 1 / -1; }
+.thumb { display: block; width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--chip); }
+.thumb.none { opacity: .5; }
 textarea { font: inherit; color: var(--text); resize: vertical; }
 
 .budgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }

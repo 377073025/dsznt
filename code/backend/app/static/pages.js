@@ -262,7 +262,7 @@ const RULE_LABEL = {
   weekly_max_recommend: "每周最多推荐", platform_fee_rate: "平台扣点", promotion_rate: "推广费率", after_sales_loss_rate: "售后损耗率",
   tool_fee_per_order: "每单工具费（元）", days: "测款天数", keep_min_visitors: "留款最少访客", keep_min_cvr_ratio: "留款转化率 ≥ 店均 ×",
   drop_max_visitors: "下架：访客少于", drop_max_cvr_ratio: "下架：转化率 < 店均 ×", optimize_days: "优化后再观察天数",
-  brand_words: "品牌 / IP 词库", llm_review: "词库没命中时交模型审查", min_weekly_visitors_for_cvr: "周访客少于此数不判断转化率",
+  brand_words: "品牌 / IP 词库", llm_review: "词库没命中时交模型审查", max_images: "审查时看几张图（0 = 只看文字）", min_weekly_visitors_for_cvr: "周访客少于此数不判断转化率",
   cvr_drop_alert_ratio: "转化率异常：近 7 天 < 前 7 天 ×", max_suggestions_per_report: "早报最多建议条数", review_window_days: "复盘观察天数",
   monthly_tuning: "月度调权", min_samples: "有结论的测款至少几款才调", max_step: "每个维度每月最多加减",
   offer_watch: "在售款货源复查", price_rise_ratio: "拿货价涨幅告警线（0.05 = 5%）", max_backups: "告警里列几个备选货源",
@@ -408,7 +408,7 @@ const offerUrl = (id) => `https://detail.1688.com/offer/${encodeURIComponent(id.
 const catalog = {
   auto: false,
   async load(el) {
-    const rows = await api("/api/catalog");
+    const [rows, offers] = await Promise.all([api("/api/catalog"), api("/api/offers/manual")]);
     const edit = canSubmit();
     const src = (p) => (p.source ? `<a href="${offerUrl(p.source.offer_id)}" target="_blank" rel="noopener">${esc(p.source.title || p.source.offer_id)}</a>`
       : `<span class="muted">未登记</span>`);
@@ -423,12 +423,85 @@ const catalog = {
         || `<tr><td colspan="7" class="muted">还没有商品数据</td></tr>`}</table></div></section>
       <section class="panel"><div class="section-head"><h2>素材库</h2><span class="muted small">每次出图都留版本，旧版本用于「换回原图」</span></div>
       ${rows.filter((p) => p.assets.length).map((p) => `<div class="task"><div class="head"><b>${esc(p.name)}</b><span class="muted small">当前主图 ${esc(p.main_image)}</span></div>
-        <div class="table-wrap"><table><tr><th>类型</th><th class="num">版本</th><th>来源</th><th>文件</th><th>说明</th><th>时间</th></tr>
-        ${p.assets.map((a) => `<tr><td>${esc(ASSET_KIND[a.kind] || a.kind)}</td><td class="num">v${a.version}</td><td>${esc(ORIGIN[a.origin] || a.origin)}</td>
+        <div class="table-wrap"><table><tr><th>图</th><th>类型</th><th class="num">版本</th><th>来源</th><th>文件</th><th>说明</th><th>时间</th></tr>
+        ${p.assets.map((a) => `<tr><td>${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(a.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>` : `<span class="thumb none" title="文件不在素材库目录里"></span>`}</td>
+          <td>${esc(ASSET_KIND[a.kind] || a.kind)}</td><td class="num">v${a.version}</td><td>${esc(ORIGIN[a.origin] || a.origin)}</td>
           <td class="small">${esc(a.path)}</td><td class="small">${esc(a.note)}</td><td class="small muted">${esc(timeStr(a.at))}</td></tr>`).join("")}</table></div></div>`).join("")
-        || `<p class="muted">还没有素材记录。图片执行器出的图、上架物料包用到的货源图会自动登记在这里。</p>`}</section>`;
+        || `<p class="muted">还没有素材记录。图片执行器出的图、上架物料包用到的货源图会自动登记在这里。</p>`}</section>
+      ${manualOffers.html(offers, edit)}`;
   },
 };
+
+// 手工货源：1688 读取没接通时，照着商品页录入，单品评估、找货源按关键词照常可用
+const OFFER_FIELDS = [
+  ["offer", "1688 链接或 offer id", "text"], ["title", "标题", "text"], ["category", "类目", "text"],
+  ["price_fen", "代发拿货价（元）", "yuan"], ["shipping_fen", "运费（元）", "yuan"], ["stock", "库存", "int"],
+  ["ship_48h_rate", "48 小时发货率（%）", "pct"], ["repurchase_rate", "回头率（%）", "pct"], ["return_rate", "退货率（%）", "pct"],
+  ["category_return_rate", "类目平均退货率（%）", "pct"], ["supplier_years", "经营年限", "int"], ["weight_kg", "重量（kg）", "num"],
+  ["longest_side_cm", "最长边（cm）", "num"], ["dropship", "支持一件代发", "bool"], ["image_urls", "图片地址（每行一个）", "lines"],
+];
+const manualOffers = {
+  editing: null,
+  html(list, edit) {
+    const o = this.editing || {};
+    const val = (k, kind) => {
+      const v = o[k];
+      if (v == null) return "";
+      return kind === "yuan" ? v / 100 : kind === "pct" ? +(v * 100).toFixed(2) : kind === "lines" ? v.join("\n") : v;
+    };
+    const input = ([k, label, kind]) => {
+      if (kind === "bool") return `<label class="check">${label}<input type="checkbox" name="${k}" ${o[k] !== false ? "checked" : ""}></label>`;
+      if (kind === "lines") return `<label class="wide">${label}<textarea name="${k}" rows="2">${esc(val(k, kind))}</textarea></label>`;
+      const num = kind !== "text";
+      const req = ["offer", "title", "price_fen", "stock", "ship_48h_rate", "supplier_years"].includes(k);
+      return `<label>${label}${req ? " *" : ""}<input name="${k}" ${num ? `type="number" step="any" min="0"` : ""} value="${esc(val(k, kind))}" ${req ? "required" : ""}></label>`;
+    };
+    return `<section class="panel"><div class="section-head"><h2>手工货源</h2>
+        <span class="muted small">1688 读取接通前，照着商品页录入；单品评估、找货源（按关键词）会用这些数据。不是实时数据，不参与周选品和每日复查</span></div>
+      <div class="table-wrap"><table><tr><th>货源</th><th class="num">拿货价</th><th class="num">库存</th><th class="num">48 小时发货</th><th class="num">年限</th><th>代发</th><th>录入</th>${edit ? "<th></th>" : ""}</tr>
+      ${list.map((x) => `<tr><td><a href="${offerUrl(x.offer_id)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="muted small">${esc(x.offer_id)}</div></td>
+        <td class="num">${yuan(x.price_fen)}</td><td class="num">${x.stock}</td><td class="num">${pct(x.ship_48h_rate)}</td><td class="num">${x.supplier_years}</td>
+        <td>${x.dropship ? "支持" : "不支持"}</td><td class="small muted">${esc(timeStr(x.updated_at))}</td>
+        ${edit ? `<td><button class="ghost" data-do="offerEdit" data-id="${esc(x.offer_id)}">修改</button></td>` : ""}</tr>`).join("")
+        || `<tr><td colspan="8" class="muted">还没有手工录入的货源</td></tr>`}</table></div>
+      ${edit ? `<form id="offerForm"><div class="rule-grid">${OFFER_FIELDS.map(input).join("")}</div>
+        <div class="actions"><button type="submit">${this.editing ? "保存修改" : "录入"}</button>${this.editing ? `<button type="button" class="ghost" data-do="offerEdit" data-id="">取消</button>` : ""}
+        <span id="offerMsg" class="small"></span></div></form>` : ""}</section>`;
+  },
+  collect(form) {
+    const body = {};
+    for (const [k, , kind] of OFFER_FIELDS) {
+      const el = form.elements[k];
+      if (kind === "bool") { body[k] = el.checked; continue; }
+      const v = el.value.trim();
+      if (kind === "text") body[k] = v;
+      else if (kind === "lines") body[k] = v.split(/\n/).map((x) => x.trim()).filter(Boolean);
+      else if (v === "") continue;
+      else if (kind === "yuan") body[k] = Math.round(parseFloat(v) * 100);
+      else if (kind === "pct") body[k] = parseFloat(v) / 100;
+      else if (kind === "int") body[k] = parseInt(v, 10);
+      else body[k] = parseFloat(v);
+    }
+    return body;
+  },
+};
+HANDLERS.offerEdit = async (d) => {
+  manualOffers.editing = d.id ? (await api("/api/offers/manual")).find((x) => x.offer_id === d.id) || null : null;
+  if (manualOffers.editing) manualOffers.editing.offer = manualOffers.editing.offer_id;
+  catalog.loaded = false; await refresh();
+  if (d.id) $("#offerForm").scrollIntoView({ block: "center" });
+};
+document.addEventListener("submit", async (e) => {
+  if (e.target.id !== "offerForm") return;
+  e.preventDefault();
+  const msg = $("#offerMsg");
+  try {
+    const r = await api("/api/offers/manual", { method: "PUT", body: manualOffers.collect(e.target) });
+    manualOffers.editing = null;
+    toast(`已保存 ${r.offer_id}`);
+    catalog.loaded = false; refresh();
+  } catch (err) { msg.className = "small err"; msg.textContent = err.message; }
+});
 HANDLERS.setSource = async (d) => {
   const v = prompt(`「${d.name}」的 1688 货源链接或 offer id（清空表示不再复查）`, d.cur);
   if (v === null) return;

@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -351,7 +353,7 @@ def product_catalog(s: Session = Depends(db)) -> list[dict[str, Any]]:
     assets = defaultdict(list)
     for a in s.scalars(select(Asset).order_by(Asset.goods_id, Asset.kind, Asset.asset_version.desc())):
         assets[a.goods_id].append({"id": a.id, "kind": a.kind, "version": a.asset_version, "origin": a.origin,
-                                   "path": a.path, "note": a.note, "at": a.created_at.isoformat()})
+                                   "path": a.path, "note": a.note, "at": a.created_at.isoformat(), "url": _asset_url(a)})
     offers = {o.id: o for o in s.scalars(select(Offer))}
     trials = {t.goods_id: t for t in s.scalars(select(TestRun).order_by(TestRun.id))}
     out = []
@@ -368,6 +370,34 @@ def product_catalog(s: Session = Depends(db)) -> list[dict[str, Any]]:
             "assets": assets.get(p.goods_id, []),
         })
     return out
+
+
+def _asset_file(a: Asset) -> Path | None:
+    """素材的本地文件：只认素材库目录里的文件（相对路径按素材库目录算），防止借路径读别的文件。"""
+    if a.path.startswith(("http://", "https://")):
+        return None
+    root = get_settings().path("assets_dir").resolve()
+    f = (root / a.path).resolve()
+    return f if f.is_file() and f.is_relative_to(root) and f.suffix.lower() in _IMAGE_TYPES else None
+
+
+_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+
+
+def _asset_url(a: Asset) -> str | None:
+    """缩略图地址：网络图片直接用；本地文件走 /api/assets/{id}/file；文件不在了返回 None。"""
+    if a.path.startswith(("http://", "https://")):
+        return a.path
+    return f"/api/assets/{a.id}/file" if _asset_file(a) else None
+
+
+@api.get("/assets/{asset_id}/file")
+def asset_file(asset_id: int, s: Session = Depends(db)) -> FileResponse:
+    a = s.get(Asset, asset_id)
+    f = _asset_file(a) if a else None
+    if f is None:
+        raise HTTPException(404, "素材文件不存在")
+    return FileResponse(f, media_type=_IMAGE_TYPES[f.suffix.lower()])
 
 
 class SourceIn(BaseModel):
@@ -393,3 +423,61 @@ def put_source(goods_id: str, body: SourceIn, s: Session = Depends(db), user: Us
           {"from": prod.source_offer_id, "to": new})
     prod.source_offer_id = new
     return {"goods_id": goods_id, "source_offer_id": new}
+
+
+# ---------- 手工货源（1688 读取没接通时，由人照着商品页录入） ----------
+
+class ManualOfferIn(BaseModel):
+    offer: str                      # 1688 链接或 offer id
+    title: str
+    category: str = ""
+    price_fen: int                  # 一件代发拿货价
+    shipping_fen: int = 0
+    dropship: bool
+    stock: int
+    ship_48h_rate: float            # 0–1
+    repurchase_rate: float = 0.0
+    return_rate: float = 0.0
+    category_return_rate: float = 0.0
+    supplier_years: int
+    weight_kg: float = 0.0
+    longest_side_cm: float = 0.0
+    image_urls: list[str] = []
+
+
+def _manual_offer_dict(o: Offer) -> dict[str, Any]:
+    return {**{k: v for k, v in o.raw.items() if k not in ("manual",)}, "updated_at": o.updated_at.isoformat()}
+
+
+@api.get("/offers/manual")
+def list_manual_offers(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    from app.adapters.alibaba1688.manual import manual_offers
+
+    return [_manual_offer_dict(o) for o in manual_offers(s)]
+
+
+@api.put("/offers/manual")
+def put_manual_offer(body: ManualOfferIn, s: Session = Depends(db), user: User = Depends(current_user)) -> dict[str, Any]:
+    """录入或更新一条手工货源。live 通道录过的同一货源也可以覆盖成手工数据（以人看到的为准）。"""
+    from app.adapters.types import OfferDetail
+    from app.agents import selection
+    from app.agents.catalog import _offer_id
+    from app.workflow.events import audit
+
+    if user.role not in ("owner", "operator"):
+        raise HTTPException(403, "只有店主和运营可以录入货源")
+    oid = _offer_id(body.offer)
+    if not oid.removeprefix("1688_").isdigit():
+        raise HTTPException(400, "请填 1688 商品链接或 offer id")
+    for f in ("ship_48h_rate", "repurchase_rate", "return_rate", "category_return_rate"):
+        if not 0 <= getattr(body, f) <= 1:
+            raise HTTPException(400, f"{f} 要在 0 到 1 之间（百分比请除以 100）")
+    if body.price_fen <= 0 or body.stock < 0 or body.supplier_years < 0:
+        raise HTTPException(400, "拿货价要大于 0，库存和经营年限不能为负")
+    d = OfferDetail.model_validate({**body.model_dump(exclude={"offer"}), "offer_id": oid,
+                                    "image_urls": [u.strip() for u in body.image_urls if u.strip()]})
+    o = selection._upsert_offer(s, d)
+    o.raw = {**o.raw, "manual": True, "entered_by": user.feishu_open_id}
+    audit(s, f"user:{user.feishu_open_id}", "offer.manual_put", f"offer:{oid}", {"price_fen": d.price_fen, "stock": d.stock})
+    s.flush()
+    return _manual_offer_dict(o)

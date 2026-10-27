@@ -86,9 +86,9 @@ def _offer_id(raw: str) -> str:
 
 
 def _source(ctx: CapContext):
-    src = selection.sourcing(ctx.session, ctx.services)
+    src = selection.sourcing(ctx.session, ctx.services, allow_manual=True)
     if src is None:
-        raise RuntimeError("1688 货源通道不可用（alibaba_api / alibaba_web 都未就绪）")
+        raise RuntimeError("1688 货源通道不可用（alibaba_api / alibaba_web 都未就绪，也没有手工录入的货源）")
     return src
 
 
@@ -425,5 +425,12 @@ def missing_capabilities(s: Session, cap: AgentCapability) -> list[str]:
     """该能力当前缺哪些能力开关（每组都要有一个 healthy）。"""
     from app import capabilities as caps
 
-    return ["/".join(group) for group in cap.needs if not any(caps.is_healthy(s, k) for k in group)]
+    from app.adapters.alibaba1688.manual import manual_offers
+
+    def ok(group: tuple[str, ...]) -> bool:
+        if any(caps.is_healthy(s, k) for k in group):
+            return True
+        return group == _SOURCING and bool(manual_offers(s))  # 手工录入的货源可以顶上
+
+    return ["/".join(group) for group in cap.needs if not ok(group)]
 

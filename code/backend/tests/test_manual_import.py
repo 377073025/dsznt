@@ -35,3 +35,30 @@ def test_bad_rows_reported(env, tmp_path):
         rec = manual_import.import_file(s, s.query(Shop).first(), path, "u")
         assert rec.status == "invalid" and rec.error_rows[0]["row"] == 2
         assert s.query(DailyMetric).count() == 0
+
+
+def test_goods_list_without_date_goes_to_pending_day(env, tmp_path):
+    from datetime import date
+
+    from app.models import Product, ProductSnapshot
+
+    with session_scope() as s:
+        s.add(FetchJob(item="goods_snapshot", day=date(2026, 10, 22), status="manual_requested"))
+    p = tmp_path / "商品列表.csv"
+    p.write_text("商品ID,商品名称,拼单价,商品主图\n"
+                 "g_new,新款香薰蜡烛 礼盒装,19.90-29.90,https://img.example.com/a.jpg?x=1\n"
+                 "g_old,旧款,9.9,\n", encoding="utf-8-sig")
+    with session_scope() as s:
+        rec = manual_import.import_file(s, s.query(Shop).first(), p, "u")
+        assert (rec.status, rec.rows, rec.parser) == ("imported", 2, "pdd_goods_list_v1")
+        snap = s.query(ProductSnapshot).filter_by(goods_id="g_new").one()
+        assert (snap.day, snap.price_fen, len(snap.main_image_hash)) == (date(2026, 10, 22), 1990, 16)
+        assert s.query(Product).filter_by(goods_id="g_old").one().main_image_hash == "-"
+        assert s.query(FetchJob).filter_by(item="goods_snapshot").one().status == "success"
+
+
+def test_manual_card_carries_guide_steps(env):
+    from app.workflow.pipelines import _guide_text
+
+    assert "商品ID、商品名称、拼单价" in _guide_text("guides/pdd_goods_list_export.md")
+    assert _guide_text("guides/nope.md") == "指引：guides/nope.md"
