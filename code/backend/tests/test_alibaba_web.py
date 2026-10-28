@@ -1,5 +1,6 @@
 """1688 网页读取：用保存下来的真实页面测解析；遇到验证 / 登录页立刻停下并记为未登录。"""
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -39,7 +40,8 @@ def test_detail_with_dropship_stats():
 def test_detail_without_dropship_stats_uses_fulfilment_rate():
     d = _detail("1017225512488")
     assert d.price_fen == 275 and d.ship_48h_rate == 1.0 and d.repurchase_rate == pytest.approx(0.744)
-    assert len(d.image_urls) >= 3 and all(u.startswith("https://cbu01.alicdn.com/img/ibank/") and u.endswith(".jpg") and "!!2217674806235-" in u
+    assert len(d.image_urls) == 2 and all(u.startswith("https://cbu01.alicdn.com/img/ibank/") and u.endswith(".jpg") and "!!2217674806235-" in u
+                                          and not re.search(r"\.\d+x\d+\.jpg$", u)  # 原图，不是缩略图
                                           for u in d.image_urls)
     # 解析结果能直接进硬性过滤（售价 19.9 元）
     assert R.hard_filter(d, 1990, _rules()["hard_filters"], _rules()["profit"]) == []

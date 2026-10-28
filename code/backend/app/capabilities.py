@@ -64,7 +64,7 @@ CREDENTIALS: dict[str, tuple[str, tuple[CredentialField, ...]]] = {
         CredentialField("alibaba_app_key", "AppKey", False),
         CredentialField("alibaba_app_secret", "AppSecret"),
     )),
-    "image_gen": ("生图服务商控制台 → API Key", (CredentialField("image_gen_api_key", "API Key"),)),
+    "image_gen": ("火山方舟控制台（console.volcengine.com/ark）→ API Key 管理；模型要先在「开通管理」里开通",(CredentialField("image_gen_api_key", "API Key"),)),
     "tunnel": ("飞书开发者后台 → 事件与回调 → 加密策略（仅长连接走不通时需要）", (
         CredentialField("feishu_verification_token", "Verification Token"),
         CredentialField("feishu_encrypt_key", "Encrypt Key"),

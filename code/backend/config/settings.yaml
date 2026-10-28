@@ -36,6 +36,16 @@ llm:
 # 改回 Anthropic：
 # llm: {provider: anthropic, key_ref: anthropic_api_key, base_url: null, structured_output: true, batch: true}
 
+# 生图服务（R11）：火山方舟 Seedream。key_ref 是「接入状态 → 生图服务 → 录入凭证」填的凭证名称；
+# 现在用 Agent Plan 个人版套餐（专属 Key + /api/plan/v3，模型 doubao-seedream-5-0-pro / doubao-seedream-5.0-flash）；
+# 改按量付费：base_url 换成 /api/v3，model 填「开通管理」里已开通的模型 ID。生成的图存到 assets_dir/generated
+image_gen:
+  provider: seedream
+  key_ref: image_gen_api_key
+  base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+  model: doubao-seedream-5-0-pro
+  size: 2K
+
 # 代码里只用角色名，模型名只在这里出现
 models:
   ceo:   {model: deepseek-v4-pro, effort: high}

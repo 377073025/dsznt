@@ -35,7 +35,7 @@ class Services:
 
     def health_checks(self) -> dict[str, Any]:
         checks = {}
-        for key, impl in (("llm", self.llm), ("feishu_bot", self.feishu)):
+        for key, impl in (("llm", self.llm), ("feishu_bot", self.feishu), ("image_gen", self.image_gen)):
             if impl is not None and hasattr(impl, "health_check"):
                 checks[key] = impl.health_check
         if self.mode == "real" and self.sourcing.get("web") is not None:
@@ -77,10 +77,19 @@ def build_services(settings: Settings | None = None) -> Services:
         from app.adapters.feishu.lark_client import LarkFeishu
 
         feishu = LarkFeishu(app_id, app_secret, download_dir=settings.path("imports_dir"))
+    image_gen = None
+    gen_conf = settings.raw.get("image_gen") or {}
+    gen_key = get_secret(gen_conf.get("key_ref", "image_gen_api_key"))
+    if gen_key and gen_conf.get("provider") == "seedream":
+        from app.adapters.image_gen.seedream import SeedreamImageGen
+
+        assets = settings.path("assets_dir")
+        image_gen = SeedreamImageGen(gen_key, gen_conf["model"], out_dir=assets / "generated", base_url=gen_conf["base_url"],
+                                     size=gen_conf.get("size", "2K"), assets_dir=assets)
     # 1688 走专用浏览器读网页；拼多多后台数据以人工导出为主（自动读取会触发平台验证）
     from app.adapters.alibaba1688.web import Alibaba1688Web
 
-    return Services(mode="real", llm=llm, feishu=feishu, sourcing={"web": Alibaba1688Web()})
+    return Services(mode="real", llm=llm, feishu=feishu, sourcing={"web": Alibaba1688Web()}, image_gen=image_gen)
 
 
 _services: Services | None = None

@@ -115,6 +115,7 @@ def _images(html: str) -> list[str]:
     for m in _IMG.finditer(html):
         url = m.group(0)
         url = ("https:" + url) if url.startswith("//") else url
+        url = re.sub(r"\.(?:\d+x\d+|search|summ)(?=\.\w+$)", "", url)  # 「.220x220.jpg」「.search.jpg」是缩略图，去掉拿原图
         if url not in seen:
             seen.append(url)
     seller = re.search(r"!!(\d+)-", seen[0]) if seen else None
