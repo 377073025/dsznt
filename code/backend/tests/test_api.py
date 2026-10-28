@@ -31,6 +31,25 @@ def test_credential_requires_owner_and_never_returned(env):
         assert "secret-xyz" not in c.get("/api/capabilities").text
 
 
+def test_credential_form_saves_fields_together(env):
+    with _client(env) as c:
+        own = {"X-Open-Id": OWNER}
+        cap = {x["key"]: x for x in c.get("/api/capabilities").json()}
+        assert [f["ref"] for f in cap["feishu_bot"]["credentials"]["fields"]] == ["feishu_app_id", "feishu_app_secret"]
+        assert cap["pdd_web"]["credentials"] is None  # 网页读取靠浏览器登录
+        url = "/api/capabilities/feishu_bot/credentials"
+        assert c.put(url, json={"values": {"feishu_app_id": "cli_x"}}, headers=own).json()["detail"] == "还缺：App Secret"
+        assert c.put(url, json={"values": {"evil_ref": "x"}}, headers=own).status_code == 400
+        r = c.put(url, json={"values": {"feishu_app_id": "cli_x", "feishu_app_secret": " s3cret-value "}}, headers=own)
+        assert r.json()["status"] == "configured"
+        # 再改时只填一项也行，另一项保留
+        assert c.put(url, json={"values": {"feishu_app_secret": "new-value", "feishu_app_id": ""}}, headers=own).json()["saved"] == ["feishu_app_secret"]
+        text = c.get("/api/capabilities").text
+        assert "s3cret" not in text and "new-value" not in text
+        assert all(f["set"] for f in {x["key"]: x for x in c.get("/api/capabilities").json()}["feishu_bot"]["credentials"]["fields"])
+        assert c.put(url, json={"values": {"feishu_app_secret": "x"}}, headers={"X-Open-Id": OPERATOR}).status_code == 403
+
+
 def test_web_console_approve_uses_same_rules(env):
     with session_scope() as s:
         sug = Suggestion(shop_id=s.query(Shop).first().id, day=DAY, type="main_image", action="a", reason="r", status="reported")

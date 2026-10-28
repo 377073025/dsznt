@@ -32,6 +32,12 @@ class Settings:
         return p if p.is_absolute() else BACKEND_DIR / p
 
     @property
+    def llm(self) -> dict[str, Any]:
+        """模型服务商配置；没写时按 Anthropic 默认。"""
+        return {"provider": "anthropic", "key_ref": "anthropic_api_key", "base_url": None,
+                "structured_output": True, "batch": True, **(self.raw.get("llm") or {})}
+
+    @property
     def db_url(self) -> str:
         return os.environ.get("DSZNT_DB_URL", f"sqlite:///{self.path('db_file').as_posix()}")
 

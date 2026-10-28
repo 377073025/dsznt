@@ -11,13 +11,14 @@ from typing import Iterator
 
 from app.config import get_settings
 
-_locks: dict[str, threading.Lock] = {}
+_locks: dict[str, threading.RLock] = {}
 _guard = threading.Lock()
 
 
-def _lock(platform: str) -> threading.Lock:
+def _lock(platform: str) -> threading.RLock:
+    """可重入：单独任务先占住平台浏览器，任务里的适配器再按页拿锁时不会把自己锁死。"""
     with _guard:
-        return _locks.setdefault(platform, threading.Lock())
+        return _locks.setdefault(platform, threading.RLock())
 
 
 class BrowserBusy(Exception):

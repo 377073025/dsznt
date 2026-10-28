@@ -54,7 +54,8 @@ def daily_analyze(ctx: JobContext, p: dict[str, Any]) -> None:
     if "goods_daily_traffic" not in missing:
         batch_conf = get_settings().raw["llm_batch"]
         batch = s.get(LlmBatch, p["batch_id"]) if p.get("batch_id") else None
-        if batch is None and batch_conf["enabled"] and ops.SPEC.name in batch_conf["agents"]:
+        if (batch is None and batch_conf["enabled"] and ops.SPEC.name in batch_conf["agents"]
+                and getattr(ctx.services.llm, "supports_batch", True)):
             # 诊断先提交 Batch（半价），结果回来后由 llm.batch_poll 重新排入本作业；超时则改走实时调用
             b = ctx.gateway.submit_batch(s, ops.SPEC.name, {"ops": ops.diagnose_request(ctx.runner, s, day)},
                                          {"type": "daily.analyze", "payload": dict(p)},

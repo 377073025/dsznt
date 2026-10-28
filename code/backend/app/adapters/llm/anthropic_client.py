@@ -1,6 +1,10 @@
-"""Anthropic 实现。API Key 从凭据管理器读取（见 app/secrets.py），不读文件。"""
+"""Anthropic Messages 格式的实现：Anthropic 本身，以及兼容这一格式的服务商（DeepSeek 等，传 base_url）。
+
+API Key 从凭据管理器读取（见 app/secrets.py），不读文件。
+"""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import anthropic
@@ -10,12 +14,20 @@ from anthropic.types.messages.batch_create_params import Request
 from app.adapters.llm.base import LLMRequest, LLMResult, Usage
 
 
-def _params(req: LLMRequest) -> dict[str, Any]:
+def _schema_hint(schema: dict[str, Any]) -> str:
+    return ("\n\n## 输出格式\n最终回答只输出一个 JSON 对象，不要输出其他文字，必须符合下面的 JSON Schema：\n"
+            + json.dumps(schema, ensure_ascii=False))
+
+
+def _params(req: LLMRequest, structured_output: bool = True) -> dict[str, Any]:
+    system = req.system
+    if req.output_schema and not structured_output:
+        system += _schema_hint(req.output_schema)
     params: dict[str, Any] = {
         "model": req.model,
         "max_tokens": req.max_tokens,
         # 系统提示词固定在最前并标记缓存；工具定义顺序由注册表保证稳定
-        "system": [{"type": "text", "text": req.system, "cache_control": {"type": "ephemeral"}}],
+        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         "messages": req.messages,
     }
     if req.tools:
@@ -23,7 +35,7 @@ def _params(req: LLMRequest) -> dict[str, Any]:
     output_config: dict[str, Any] = {}
     if req.effort:
         output_config["effort"] = req.effort
-    if req.output_schema:
+    if req.output_schema and structured_output:
         output_config["format"] = {"type": "json_schema", "schema": req.output_schema}
     if output_config:
         params["output_config"] = output_config
@@ -45,17 +57,22 @@ def _to_result(msg: Any) -> LLMResult:
 
 
 class AnthropicLLM:
-    def __init__(self, api_key: str, health_model: str, max_retries: int = 3):
-        self.client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries)
+    def __init__(self, api_key: str, health_model: str, max_retries: int = 3, base_url: str | None = None,
+                 structured_output: bool = True, supports_batch: bool = True):
+        self.client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries, base_url=base_url)
         self.health_model = health_model
+        self.structured_output = structured_output
+        self.supports_batch = supports_batch
 
     def run(self, req: LLMRequest) -> LLMResult:
-        return _to_result(self.client.messages.create(**_params(req)))
+        return _to_result(self.client.messages.create(**_params(req, self.structured_output)))
 
     def submit_batch(self, reqs: dict[str, LLMRequest]) -> str:
+        if not self.supports_batch:
+            raise RuntimeError("当前模型服务商不支持 Batch")
         batch = self.client.messages.batches.create(
             requests=[
-                Request(custom_id=cid, params=MessageCreateParamsNonStreaming(**_params(r)))
+                Request(custom_id=cid, params=MessageCreateParamsNonStreaming(**_params(r, self.structured_output)))
                 for cid, r in reqs.items()
             ]
         )

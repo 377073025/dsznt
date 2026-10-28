@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -97,7 +97,9 @@ def build_scheduler() -> BackgroundScheduler:
     sched = BackgroundScheduler(timezone=tz)
     sched.add_job(_enqueue_daily_fetch, CronTrigger.from_crontab(conf["fetch_daily"], timezone=tz), id="daily_fetch")
     sched.add_job(_enqueue_selection_weekly, CronTrigger.from_crontab(conf["selection_weekly"], timezone=tz), id="selection")
-    sched.add_job(_health_check, "interval", minutes=conf["health_check_minutes"], id="health")
+    # 启动后马上查一次：录完凭证重启，状态立刻更新，不用等一个周期
+    sched.add_job(_health_check, "interval", minutes=conf["health_check_minutes"], id="health",
+                  next_run_time=datetime.now() + timedelta(seconds=5))
     sched.add_job(_enqueue_timeouts, "interval", minutes=30, id="timeouts")
     sched.add_job(_backup, CronTrigger.from_crontab(conf["backup"], timezone=tz), id="backup")
     sched.add_job(_enqueue_system_report, CronTrigger.from_crontab(conf["system_report"], timezone=tz), id="system_report")

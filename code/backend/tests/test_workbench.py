@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.llm.fake import FakeLLM
+from app.config import get_settings
 from app.adapters.llm.fake_responders import ops_diagnose
 from app.agents.tracking import request_cancel
 from app.data.channels.web_reader.limiter import DailyLimitReached, RateLimiter
@@ -42,7 +43,7 @@ def test_main_flow_writes_run_records(env):
         runs = {r.capability: r for r in rs.query(AgentRun)}
         assert runs["ops.diagnose"].status == "succeeded" and runs["ops.diagnose"].source == "main"
         assert runs["ops.diagnose"].label == "主流程 · daily.analyze" and runs["ops.diagnose"].turns == 1
-        assert runs["ceo.daily"].model == "claude-opus-5-5" and runs["ceo.daily"].tokens > 0
+        assert runs["ceo.daily"].model == get_settings().model_for("ceo")["model"] and runs["ceo.daily"].tokens > 0
 
 
 def test_adhoc_diagnose_isolated_then_promoted(env):

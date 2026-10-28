@@ -19,7 +19,7 @@ KEEP_DAYS = 30
 
 # 脱敏：token / 密钥 / Cookie 类的键值、手机号、身份证号
 _REDACT = [
-    (re.compile(r"(?i)((?:access_?token|refresh_?token|token|secret|api_?key|password|cookie|authorization)"
+    (re.compile(r"(?i)((?:access_?token|refresh_?token|access_?key|ticket|token|secret|api_?key|password|cookie|authorization)"
                 r"[\"']?\s*[:=]\s*[\"']?)([^\s\"',;&]+)"), r"\1***"),
     (re.compile(r"(?i)(bearer\s+)[\w\-.]+"), r"\1***"),
     (re.compile(r"(?<!\d)(1[3-9]\d)\d{4}(\d{4})(?!\d)"), r"\1****\2"),

@@ -77,3 +77,16 @@ def test_chat_answer_and_instruction(env):
     assert "请确认这条指令" in card["header"]["title"]["content"]
     with session_scope() as s:
         assert s.query(Suggestion).filter_by(status="reported", action="帮我把雪松降价").count() == 1
+
+
+def test_card_without_push_group_goes_to_owner(env):
+    """还没有推送群：卡片私聊发给店主；指定了会话就发到那个会话。"""
+    from app.interfaces.feishu.notify import send_card
+
+    services, _ = env
+    with session_scope() as s:
+        assert chat_id(s) == ""
+        send_card(s, services, {"t": 1}, "report", 1)
+        assert services.feishu.sent[-1]["open_id"] == OWNER
+        send_card(s, services, {"t": 2}, "suggestion", 1, chat="oc_p2p")
+        assert services.feishu.sent[-1]["chat_id"] == "oc_p2p"

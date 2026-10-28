@@ -135,7 +135,7 @@ def _on_chat(ctx: JobContext, user: User, chat_id: str, text: str) -> None:
         s.add(sug)
         s.flush()
         transition(s, "suggestion", sug.id, "report", ceo.CEO, {"from_chat": True})
-        send_card(s, services, cards.suggestions("请确认这条指令", [sug]), "suggestion", sug.id)
+        send_card(s, services, cards.suggestions("请确认这条指令", [sug]), "suggestion", sug.id, chat=chat_id)
 
 
 # ---------- 固定指令（不调用模型） ----------

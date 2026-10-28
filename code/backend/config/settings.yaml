@@ -6,6 +6,13 @@ adapter_mode: fake
 
 timezone: Asia/Shanghai
 
+# 不使用的能力（2026-10-28 决定）：拼多多 / 1688 开放平台不申请，全部走专用浏览器操作网页。
+# 「接入状态」页把它们放到最后、不给录入按钮；改回来删掉对应项即可
+unused_capabilities: [pdd_api, alibaba_api]
+
+# 专用浏览器用哪个：edge / chrome（都用本机安装的，每个平台单独一个用户目录）
+browser: edge
+
 paths:
   data_dir: data
   db_file: data/app.db
@@ -16,11 +23,26 @@ paths:
   page_samples_dir: data/page_samples
   logs_dir: data/logs
 
+# 模型服务商（R06）。都走 Anthropic Messages 格式，换服务商只改这里和下面的 models / model_prices，改完重启。
+#   key_ref：在 Web「接入状态 → 模型服务 → 录入凭证」时填的凭证名称
+#   structured_output：服务商是否支持 output_config.format；不支持时把 JSON 结构写进系统提示词
+#   batch：服务商是否支持 Message Batches；不支持时 llm_batch 不生效，全部走实时调用
+llm:
+  provider: deepseek
+  key_ref: deepseek_api_key
+  base_url: https://api.deepseek.com/anthropic
+  structured_output: false
+  batch: false
+# 改回 Anthropic：
+# llm: {provider: anthropic, key_ref: anthropic_api_key, base_url: null, structured_output: true, batch: true}
+
 # 代码里只用角色名，模型名只在这里出现
 models:
-  ceo:   {model: claude-opus-5-5,   effort: high}
-  main:  {model: claude-sonnet-5-5, effort: medium}
-  light: {model: claude-haiku-5-5,  effort: low}
+  ceo:   {model: deepseek-v4-pro, effort: high}
+  main:  {model: deepseek-v4-pro, effort: medium}
+  light: {model: deepseek-flash,  effort: low}
+# Anthropic 时：
+#   ceo: claude-opus-5-5 / high，main: claude-sonnet-5-5 / medium，light: claude-haiku-5-5 / low
 
 # 按智能体单独指定模型（可选）。不写的智能体用代码里的默认角色。
 # 键：完整名（ceo.daily）优先，其次智能体名（ceo，对它的所有环节生效）。
@@ -36,8 +58,10 @@ agent_models:
   # ops: {effort: high}                    # 运营智能体全部环节加大思考量
   # selection.same_product: {model: claude-sonnet-5-5, effort: low}
 
-# 每百万 token 价格（美元），用于成本计量
+# 每百万 token 价格（美元），用于成本计量。DeepSeek 按高峰时段价格记（非高峰是一半），宁高勿低
 model_prices:
+  deepseek-v4-pro:   {input: 1.32, output: 3.96, cache_read: 0.044}
+  deepseek-flash:    {input: 0.30, output: 1.20, cache_read: 0.006}
   claude-opus-5-5:   {input: 4.0, output: 20.0, cache_read: 0.40}
   claude-sonnet-5-5: {input: 2.0, output: 10.0, cache_read: 0.20}
   claude-haiku-5-5:  {input: 0.10, output: 0.50, cache_read: 0.01}

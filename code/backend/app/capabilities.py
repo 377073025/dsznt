@@ -40,6 +40,50 @@ CAPABILITIES: dict[str, CapabilityDef] = {
     ]
 }
 
+
+@dataclass(frozen=True)
+class CredentialField:
+    ref: str          # 凭据管理器里的名称
+    label: str
+    secret: bool = True
+    placeholder: str = ""
+
+
+# 各能力需要录入的凭证（08 号文档第 4 节）。网页读取和工具类能力靠专用浏览器登录，不录凭证。
+# 模型服务的凭证名称随服务商变化，见 credential_form()。
+CREDENTIALS: dict[str, tuple[str, tuple[CredentialField, ...]]] = {
+    "feishu_bot": ("飞书开放平台 → 开发者后台 → 你的应用 → 凭证与基础信息", (
+        CredentialField("feishu_app_id", "App ID", False, "cli_ 开头"),
+        CredentialField("feishu_app_secret", "App Secret"),
+    )),
+    "pdd_api": ("拼多多开放平台 → 应用管理（录入后还要用店铺主账号授权）", (
+        CredentialField("pdd_client_id", "client_id", False),
+        CredentialField("pdd_client_secret", "client_secret"),
+    )),
+    "alibaba_api": ("1688 开放平台 → 应用管理（录入后还要授权）", (
+        CredentialField("alibaba_app_key", "AppKey", False),
+        CredentialField("alibaba_app_secret", "AppSecret"),
+    )),
+    "image_gen": ("生图服务商控制台 → API Key", (CredentialField("image_gen_api_key", "API Key"),)),
+    "tunnel": ("飞书开发者后台 → 事件与回调 → 加密策略（仅长连接走不通时需要）", (
+        CredentialField("feishu_verification_token", "Verification Token"),
+        CredentialField("feishu_encrypt_key", "Encrypt Key"),
+    )),
+}
+_LLM_HINTS = {"deepseek": "DeepSeek 开放平台（platform.deepseek.com）→ API Keys",
+              "anthropic": "Anthropic Console → API Keys"}
+
+
+def credential_form(key: str) -> tuple[str, tuple[CredentialField, ...]] | None:
+    """录入表单：(去哪里拿, 字段)；不需要录凭证的能力返回 None。"""
+    if key == "llm":
+        from app.config import get_settings
+
+        conf = get_settings().llm
+        return (_LLM_HINTS.get(conf["provider"], "模型服务商控制台 → API Key"),
+                (CredentialField(conf["key_ref"], "API Key", True, "sk-…"),))
+    return CREDENTIALS.get(key)
+
 # 08 号人工申请清单
 APPLICATIONS: list[tuple[str, str, str]] = [
     ("R01", "拼多多店铺与主账号", "必需"),

@@ -38,6 +38,10 @@ class Services:
         for key, impl in (("llm", self.llm), ("feishu_bot", self.feishu)):
             if impl is not None and hasattr(impl, "health_check"):
                 checks[key] = impl.health_check
+        if self.mode == "real" and self.sourcing.get("web") is not None:
+            from app.data.channels.web_reader import profiles
+
+            checks["alibaba_web"] = lambda: profiles.require_logged_in("alibaba")
         return checks
 
 
@@ -60,19 +64,23 @@ def build_services(settings: Settings | None = None) -> Services:
         )
 
     llm = None
-    key = get_secret("anthropic_api_key")
+    conf = settings.llm
+    key = get_secret(conf["key_ref"])
     if key:
         from app.adapters.llm.anthropic_client import AnthropicLLM
 
-        llm = AnthropicLLM(api_key=key, health_model=settings.model_for("light")["model"])
+        llm = AnthropicLLM(api_key=key, health_model=settings.model_for("light")["model"], base_url=conf.get("base_url"),
+                           structured_output=conf.get("structured_output", True), supports_batch=conf.get("batch", True))
     feishu = None
     app_id, app_secret = get_secret("feishu_app_id"), get_secret("feishu_app_secret")
     if app_id and app_secret:
         from app.adapters.feishu.lark_client import LarkFeishu
 
         feishu = LarkFeishu(app_id, app_secret, download_dir=settings.path("imports_dir"))
-    # 其余真实适配器在 M1 起逐个实现（网页读取、拼多多 API、1688 API…）
-    return Services(mode="real", llm=llm, feishu=feishu)
+    # 1688 走专用浏览器读网页；拼多多后台数据以人工导出为主（自动读取会触发平台验证）
+    from app.adapters.alibaba1688.web import Alibaba1688Web
+
+    return Services(mode="real", llm=llm, feishu=feishu, sourcing={"web": Alibaba1688Web()})
 
 
 _services: Services | None = None

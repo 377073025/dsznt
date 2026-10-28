@@ -7,7 +7,7 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -e .[dev]
-.venv\Scripts\python -m pytest -q          # 117 个测试（需要 Python ≥ 3.11）
+.venv\Scripts\python -m pytest -q          # 142 个测试（需要 Python ≥ 3.11）
 .venv\Scripts\python scripts\demo_run.py   # 演示：海盐换图闭环 + 周选品 + 上新，打印飞书卡片
 ```
 
@@ -30,6 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1   # 注�
 备份：worker 每天 03:00 把数据库快照与素材库增量备份到 `backup.dir`（默认 `data/backups`，建议改到另一块盘），保留 30 天。
 
 `config/settings.yaml` 里 `adapter_mode: fake` 用模拟数据；改成 `real` 后，未实现或未就绪的能力会自动降级。
+
+接入模型（R06）：默认用 DeepSeek（Anthropic 兼容接口），服务商、模型和价格在 `config/settings.yaml` 的 `llm`、`models`、`model_prices` 里改。在 Web「接入状态 → 模型服务 → 录入凭证」填凭证名称 `deepseek_api_key`（已预填）和 Key。DeepSeek 不支持结构化输出和 Batch：JSON 结构改写进系统提示词，诊断全部走实时调用。
 
 接入飞书（R05 办好后）：在 Web「接入状态」录入凭证 `feishu_app_id`、`feishu_app_secret`，`adapter_mode` 改为 `real`，重启 worker。
 worker 会在主线程跑飞书长连接（SDK 要求），作业循环在后台线程。机器人第一次在群里收到消息时，自动把该群设为推送群。
@@ -76,5 +78,8 @@ worker 会在主线程跑飞书长连接（SDK 要求），作业循环在后台
 | 智能体工作台、单独任务与隔离；Web 闭环总览、选品中心、任务看板、数据中心、规则配置（留版本）、成本、商品与素材、用户与权限、接入状态 | |
 | 运维：JSON 日志与脱敏、每日备份、看门狗与开机自启、周度系统报告、旧库自动补列 | |
 | 真实模式冒烟测试：只有模型和飞书、数据全靠导出文件时，日常闭环能跑通 | |
+| 模型服务默认 DeepSeek（Anthropic 兼容接口）；凭证在「接入状态」弹窗录入 | |
+| 专用浏览器（本机 Edge，每平台独立目录）：「接入状态」里打开窗口登录、检查登录；拼多多 / 1688 开放平台标为不使用 | |
+| 1688 网页读取：关键词搜索、商品详情（价格、库存、代发数据、供应商、尺寸重量、主图），按页限速，遇到验证或登录页立即停下并记为未登录；单品评估、找货源已实测 | 以图搜（要上传图片）；论坛需求挖掘（来源待定） |
 
 注：本机为 Python 3.11，代码按 3.11 兼容编写（设计文档写的是 3.12）。

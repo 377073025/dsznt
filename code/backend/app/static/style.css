@@ -208,3 +208,25 @@ textarea { font: inherit; color: var(--text); resize: vertical; }
   .split > .detail { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 10px; width: 100%; }
   .split > .table-wrap { width: 100%; }
 }
+
+/* 录入凭证弹窗 */
+.nowrap { white-space: nowrap; }
+.dlg { border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--card); color: var(--text);
+  width: min(460px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0, 0, 0, .18); }
+.dlg::backdrop { background: rgba(15, 18, 22, .45); }
+.dlg-body { padding: 18px 20px 14px; margin: 0; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.dlg-head h2 { font-size: 16px; }
+.dlg label { margin: 14px 0 0; color: var(--text); font-size: 13px; font-weight: 500; }
+.dlg label .chip { font-weight: 400; margin-left: 4px; }
+.dlg label > .muted { display: block; font-weight: 400; margin-top: 3px; }
+.dlg .pw { display: flex; gap: 6px; margin-top: 5px; }
+.dlg .pw input { flex: 1; font-size: 14px; padding: 7px 10px; font-family: Consolas, "SFMono-Regular", monospace; }
+.dlg .pw button { flex: none; }
+.dlg .row.end { margin-top: 18px; }
+.dlg-err { color: var(--pause); margin: 10px 0 0; }
+button.icon { background: transparent; color: var(--muted); border: 0; font-size: 20px; line-height: 1; padding: 2px 6px; }
+button.icon:hover { color: var(--text); }
+button.small { font-size: 12px; padding: 4px 10px; }
+tr.dim td { opacity: .55; }
+.login-state { margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

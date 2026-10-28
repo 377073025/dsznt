@@ -63,12 +63,18 @@ async function loadHealth() {
 async function loadMe() {
   state.me = null;
   $("#role").textContent = "";
-  if (!openId()) { $("#role").textContent = "（未填写，只能查看）"; return; }
-  try {
-    state.me = await api("/api/me");
-    $("#role").textContent = { owner: "店主", operator: "运营", viewer: "只读" }[state.me.role] || state.me.role;
-  } catch (e) { $("#role").textContent = e.message; }
+  if (!openId()) {
+    $("#role").textContent = "（未填写，只能查看）";
+  } else {
+    try {
+      state.me = await api("/api/me");
+      $("#role").textContent = { owner: "店主", operator: "运营", viewer: "只读" }[state.me.role] || state.me.role;
+    } catch (e) { $("#role").textContent = e.message; }
+  }
   renderTasks();
+  // 按钮按身份显示：身份变了，不自动刷新的页面也要重画一次
+  const v = currentView();
+  if (window.PAGES && PAGES[v]) { PAGES[v].loaded = false; refresh(); }
 }
 const canSubmit = () => state.me && ["owner", "operator"].includes(state.me.role);
 

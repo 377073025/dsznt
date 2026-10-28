@@ -20,6 +20,7 @@ from app.bootstrap import init
 from app.config import get_settings
 from app.data import queries
 from app.data.channels import manual_import
+from app.data.channels.web_reader import profiles
 from app.db import session_scope
 from app.interfaces import console_api
 from app.interfaces.feishu.handler import get_or_register
@@ -27,7 +28,7 @@ from app.llm.gateway import Gateway
 from app.agents import status as agent_status
 from app.agents.catalog import AGENT_TITLES, CATALOG
 from app.models import AdhocTask, Application, Capability, Job, Report, Shop, Suggestion, Task, User
-from app.secrets import set_secret
+from app.secrets import get_secret, set_secret
 from app.services import get_services
 from app.workflow import adhoc
 from app.workflow.jobs import enqueue
@@ -85,15 +86,84 @@ def list_products(s: Session = Depends(db)) -> list[dict[str, Any]]:
 
 @app.get("/api/capabilities")
 def list_capabilities(s: Session = Depends(db)) -> list[dict[str, Any]]:
+    unused = set(get_settings().raw.get("unused_capabilities") or [])
+    logins = {d.capability: d.platform for d in profiles.login_defs().values()}
     return [
         {"key": c.key, "title": caps.CAPABILITIES[c.key].title, "status": c.status, "applications": c.application_ids,
-         "last_error": c.last_error}
+         "last_error": c.last_error, "credentials": _credential_form(c.key), "unused": c.key in unused,
+         "browser": logins.get(c.key)}
         for c in s.scalars(select(Capability))
     ]
 
 
+@app.get("/api/browsers")
+def list_browsers() -> list[dict[str, Any]]:
+    return [{"platform": d.platform, "title": d.title, "capability": d.capability, **profiles.login_state(d.platform)}
+            for d in profiles.login_defs().values()]
+
+
+def _browser_action(platform: str, user: User, fn) -> Any:
+    if user.role not in ("owner", "operator"):
+        raise HTTPException(403, "只有店主和运营可以操作专用浏览器")
+    try:
+        return fn(platform)
+    except profiles.BrowserError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/browsers/{platform}/open")
+def open_browser(platform: str, user: User = Depends(current_user)) -> dict:
+    _browser_action(platform, user, profiles.open_login)
+    return {"platform": platform, **profiles.login_state(platform)}
+
+
+@app.post("/api/browsers/{platform}/check")
+def check_browser(platform: str, s: Session = Depends(db), user: User = Depends(current_user)) -> dict:
+    state = _browser_action(platform, user, profiles.check_login)
+    cap = profiles.login_defs()[platform].capability
+    if cap in get_services().health_checks():  # 已有读取实现的平台：登录状态就是通道状态
+        if state["logged_in"]:
+            caps.set_status(s, cap, caps.HEALTHY, "专用浏览器已登录")
+        elif s.get(Capability, cap).status != caps.NOT_CONFIGURED:
+            caps.set_status(s, cap, caps.DEGRADED, "专用浏览器未登录")
+    return {"platform": platform, **profiles.login_state(platform)}
+
+
+def _credential_form(key: str) -> dict[str, Any] | None:
+    """录入表单的字段；set 只说明录没录过，不返回值。"""
+    form = caps.credential_form(key)
+    if form is None:
+        return None
+    hint, fields = form
+    return {"hint": hint, "fields": [{"ref": f.ref, "label": f.label, "secret": f.secret, "placeholder": f.placeholder,
+                                       "set": bool(get_secret(f.ref))} for f in fields]}
+
+
+class CredentialsIn(BaseModel):
+    values: dict[str, str]   # 凭证名称 → 值；空值表示不修改
+
+
+@app.put("/api/capabilities/{key}/credentials")
+def put_credentials(key: str, body: CredentialsIn, s: Session = Depends(db), _: User = Depends(require_owner)) -> dict:
+    form = caps.credential_form(key)
+    if form is None:
+        raise HTTPException(400, "这项能力不需要录入凭证")
+    refs = [f.ref for f in form[1]]
+    values = {r: v.strip() for r, v in body.values.items() if v and v.strip()}
+    if unknown := set(values) - set(refs):
+        raise HTTPException(400, f"不认识的凭证名称：{'、'.join(sorted(unknown))}")
+    if not values:
+        raise HTTPException(400, "没有填写任何内容")
+    if missing := [f.label for f in form[1] if f.ref not in values and not get_secret(f.ref)]:
+        raise HTTPException(400, f"还缺：{'、'.join(missing)}")
+    for ref, v in values.items():
+        set_secret(ref, v)  # 只进凭据管理器，不落库、不写日志
+    caps.mark_configured(s, key, ",".join(refs))
+    return {"key": key, "status": caps.CONFIGURED, "saved": sorted(values)}
+
+
 class CredentialIn(BaseModel):
-    ref: str     # 例如 anthropic_api_key、feishu_app_secret
+    ref: str     # 例如 deepseek_api_key、feishu_app_secret
     value: str
 
 
@@ -280,5 +350,14 @@ def trigger(job_type: str, payload: dict[str, Any], s: Session = Depends(db), _:
 
 app.include_router(console_api.api)
 
+class _ConsoleFiles(StaticFiles):
+    """每次都向服务器确认版本（文件没变时返回 304），升级后不会继续用浏览器里的旧脚本。"""
+
+    def file_response(self, *args: Any, **kwargs: Any):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 # Web 控制台静态页（无构建步骤）。放在最后挂载，不遮挡 /api 路由。
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="console")
+app.mount("/", _ConsoleFiles(directory=Path(__file__).parent / "static", html=True), name="console")

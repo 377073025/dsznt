@@ -24,7 +24,7 @@ def chat_id(s: Session) -> str:
     if configured:
         return configured
     row = s.scalar(select(RuleConfig).where(RuleConfig.key == CHAT_KEY).order_by(RuleConfig.id.desc()))
-    return row.value if row else "default_chat"
+    return row.value if row else ""
 
 
 def remember_chat(s: Session, chat: str) -> bool:
@@ -36,17 +36,40 @@ def remember_chat(s: Session, chat: str) -> bool:
 
 def send_card(
     s: Session, services: Services, card: dict[str, Any], entity: str, entity_id: int,
-    also: list[tuple[str, int]] | None = None, to_user: str = "",
+    also: list[tuple[str, int]] | None = None, to_user: str = "", chat: str = "",
 ) -> str | None:
-    """also：同一张卡片里还带按钮的其他实体（例如早报里的每条建议）。to_user：私聊发给这个 open_id，不发群。"""
+    """also：同一张卡片里还带按钮的其他实体（例如早报里的每条建议）。to_user：私聊发给这个 open_id，不发群。
+    chat：发到这个会话（例如店主正在对话的私聊）。都没给且还没有推送群时，私聊发给店主。"""
     if services.feishu is None or not caps.is_healthy(s, "feishu_bot"):
         log.warning("飞书不可用，卡片未发送：%s #%s", entity, entity_id)
         return None
-    mid = services.feishu.send_card_to_user(to_user, card) if to_user else services.feishu.send_card(chat_id(s), card)
+    if to_user:
+        mid = services.feishu.send_card_to_user(to_user, card)
+    elif chat or chat_id(s):
+        mid = services.feishu.send_card(chat or chat_id(s), card)
+    else:
+        mid = _send_to_owners(s, services, card)
+        if mid is None:
+            log.warning("没有推送群，也没能私聊到店主，卡片未发送：%s #%s", entity, entity_id)
+            return None
     for e, i in [(entity, entity_id), *(also or [])]:
         s.add(CardMessage(message_id=mid, entity=e, entity_id=i, card=card))
     s.flush()
     return mid
+
+
+def _send_to_owners(s: Session, services: Services, card: dict[str, Any]) -> str | None:
+    """还没有推送群：私聊发给每个店主，返回第一条成功的消息 ID（占位账号之类发不出去的跳过）。"""
+    from app.models import User
+
+    first = None
+    for u in s.scalars(select(User).where(User.role == "owner")):
+        try:
+            mid = services.feishu.send_card_to_user(u.feishu_open_id, card)
+            first = first or mid
+        except Exception as e:  # noqa: BLE001
+            log.warning("私聊店主 %s 失败：%s", u.feishu_open_id, e)
+    return first
 
 
 def cards_for(s: Session, entity: str, entity_id: int) -> list[CardMessage]:

@@ -539,20 +539,25 @@ const APP_STATUS = { todo: "未开始", doing: "办理中", waiting: "等待审�
 const integrations = {
   auto: false,
   async load(el) {
-    const [cs, apps] = await Promise.all([api("/api/capabilities"), api("/api/applications")]);
+    const [all, apps, browsers] = await Promise.all([api("/api/capabilities"), api("/api/applications"), api("/api/browsers")]);
     const owner = isOwner(), edit = canSubmit();
+    const cs = [...all.filter((c) => !c.unused), ...all.filter((c) => c.unused)];  // 不使用的放最后
+    integrations.browsers = Object.fromEntries(browsers.map((b) => [b.platform, b]));
     const appName = Object.fromEntries(apps.map((a) => [a.id, a.name]));
     const statusSel = (a) => `<select data-app-status="${esc(a.id)}">${Object.entries(APP_STATUS).map(([k, v]) =>
       `<option value="${k}" ${k === a.status ? "selected" : ""}>${v}</option>`).join("")}</select>`;
+    integrations.caps = Object.fromEntries(cs.map((c) => [c.key, c]));
     el.innerHTML = `<section class="panel"><div class="section-head"><h2>数据与服务通道</h2>
         <span class="muted small">每 30 分钟健康检查；不可用时自动降级（API → 网页 → 人工）</span></div>
-      <div class="table-wrap"><table><tr><th>能力</th><th>状态</th><th>对应申请</th><th>最近错误</th>${owner ? "<th></th>" : ""}</tr>
-      ${cs.map((c) => `<tr><td><b>${esc(c.title)}</b><div class="muted small">${esc(c.key)}</div></td>
-        <td><span class="chip s-${esc(c.status)}"><i class="dot"></i>${esc(CAP_STATUS[c.status] || c.status)}</span></td>
+      <div class="table-wrap"><table><tr><th>能力</th><th>状态</th><th>对应申请</th><th>最近错误</th>${edit ? "<th></th>" : ""}</tr>
+      ${cs.map((c) => `<tr class="${c.unused ? "dim" : ""}"><td><b>${esc(c.title)}</b><div class="muted small">${esc(c.key)}</div></td>
+        <td>${c.unused ? `<span class="chip">不使用</span>` : `<span class="chip s-${esc(c.status)}"><i class="dot"></i>${esc(CAP_STATUS[c.status] || c.status)}</span>`}
+          ${c.browser ? loginChip(integrations.browsers[c.browser]) : ""}</td>
         <td class="small">${c.applications.map((a) => `${esc(a)} ${esc(appName[a] || "")}`).join("<br>") || "—"}</td>
         <td class="small">${esc(c.last_error || "")}</td>
-        ${owner ? `<td><button class="ghost" data-do="credential" data-key="${esc(c.key)}" data-title="${esc(c.title)}">录入凭证</button></td>` : ""}</tr>`).join("")}</table></div>
-      <p class="muted small">凭证只存进本机凭据管理器，不落库、不写日志。录入后状态为「待检查」，下次健康检查通过即为「正常」；真实模式还要把 config/settings.yaml 的 adapter_mode 改为 real 并重启 worker。</p></section>
+        ${edit ? `<td class="nowrap">${actionCell(c, owner)}</td>` : ""}</tr>`).join("")}</table></div>
+      <p class="muted small">凭证只存进本机凭据管理器，不落库、不写日志。录入后状态为「待检查」，重启服务或下次健康检查通过即为「正常」。</p>
+      <p class="muted small">专用浏览器（Edge）：每个平台一个独立的窗口，和你平时用的 Edge 互不影响，登录一次会一直保存。登录完关掉那个窗口，再点「检查登录」。</p></section>
       <section class="panel"><div class="section-head"><h2>人工申请进度</h2><span class="muted small">08 号文档清单</span></div>
       <div class="table-wrap"><table><tr><th>编号</th><th>事项</th><th>级别</th><th>状态</th><th>备注</th></tr>
       ${apps.map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.name)}</td><td class="small">${esc(a.level)}</td>
@@ -560,16 +565,75 @@ const integrations = {
         <td>${edit ? `<input data-app-note="${esc(a.id)}" value="${esc(a.note)}" placeholder="进度备注">` : esc(a.note)}</td></tr>`).join("")}</table></div></section>`;
   },
 };
-HANDLERS.credential = async (d) => {
-  const ref = prompt(`「${d.title}」的凭证名称（例如 anthropic_api_key、feishu_app_secret）`);
-  if (!ref || !ref.trim()) return;
-  const value = prompt(`${ref.trim()} 的值（只存本机凭据管理器）`);
-  if (!value) return;
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+const loginChip = (b) => {
+  if (!b) return "";
+  if (b.window_open) return `<div class="small login-state"><span class="chip s-waiting_human"><i class="dot"></i>登录窗口已打开</span></div>`;
+  if (b.logged_in === null) return `<div class="small login-state muted">还没检查过登录</div>`;
+  return `<div class="small login-state"><span class="chip ${b.logged_in ? "s-healthy" : "s-failed"}"><i class="dot"></i>${b.logged_in ? "已登录" : "未登录"}</span>
+    <span class="muted">${esc(fmtTime(b.checked_at))} 检查</span></div>`;
+};
+const actionCell = (c, owner) => {
+  if (c.unused) return `<span class="muted small">改走网页</span>`;
+  if (c.browser) {
+    const b = integrations.browsers[c.browser];
+    return `<button class="ghost" data-do="browserOpen" data-platform="${esc(c.browser)}" ${b && b.window_open ? "disabled" : ""}>打开浏览器登录</button>
+      <button class="ghost" data-do="browserCheck" data-platform="${esc(c.browser)}">检查登录</button>`;
+  }
+  if (!c.credentials) return `<span class="muted small">先确定用哪个工具</span>`;
+  if (!owner) return "";
+  const done = c.credentials.fields.every((f) => f.set);
+  return `<button class="ghost" data-do="credential" data-key="${esc(c.key)}">${done ? "修改凭证" : "录入凭证"}</button>`;
+};
+HANDLERS.browserOpen = async (d, btn) => {
+  btn.disabled = true;
   try {
-    await api(`/api/capabilities/${encodeURIComponent(d.key)}/credential`, { method: "POST", body: { ref: ref.trim(), value } });
-    toast("已录入，等待下次健康检查");
-    integrations.loaded = false; refresh();
+    await api(`/api/browsers/${encodeURIComponent(d.platform)}/open`, { method: "POST" });
+    toast("已打开专用浏览器：在那个窗口里登录，完成后关掉窗口，再点「检查登录」");
   } catch (e) { alert(e.message); }
+  integrations.loaded = false; refresh();
+};
+HANDLERS.browserCheck = async (d, btn) => {
+  btn.disabled = true; btn.textContent = "检查中…";
+  try {
+    const r = await api(`/api/browsers/${encodeURIComponent(d.platform)}/check`, { method: "POST" });
+    toast(r.logged_in ? "已登录" : "未登录：请点「打开浏览器登录」完成登录");
+  } catch (e) { alert(e.message); }
+  integrations.loaded = false; refresh();
+};
+HANDLERS.credential = (d) => {
+  const c = integrations.caps[d.key], form = c.credentials;
+  let dlg = document.getElementById("credDlg");
+  if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "credDlg"; dlg.className = "dlg"; document.body.append(dlg); }
+  dlg.innerHTML = `<form method="dialog" class="dlg-body">
+    <div class="dlg-head"><h2>${c.credentials.fields.every((f) => f.set) ? "修改" : "录入"}凭证 · ${esc(c.title)}</h2>
+      <button type="button" class="icon" data-close aria-label="关闭">×</button></div>
+    <p class="muted small">在哪里拿：${esc(form.hint)}</p>
+    ${form.fields.map((f) => `<label>${esc(f.label)}${f.set ? ` <span class="chip s-healthy"><i class="dot"></i>已录入</span>` : ""}
+      <span class="pw"><input name="${esc(f.ref)}" type="${f.secret ? "password" : "text"}" autocomplete="off" spellcheck="false"
+        placeholder="${esc(f.set ? "已录入，留空则不修改" : f.placeholder || "")}">
+      ${f.secret ? `<button type="button" class="ghost small" data-peek>显示</button>` : ""}</span>
+      <span class="muted small">凭证名称 ${esc(f.ref)}</span></label>`).join("")}
+    <p class="dlg-err small" hidden></p>
+    <div class="row end"><button type="button" class="ghost" data-close>取消</button><button type="submit">保存</button></div>
+    <p class="muted small">只存进本机凭据管理器（Windows 凭据），不落库、不写日志，保存后页面上也看不到原值。</p></form>`;
+  const err = dlg.querySelector(".dlg-err");
+  dlg.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => dlg.close()));
+  dlg.querySelectorAll("[data-peek]").forEach((b) => b.addEventListener("click", () => {
+    const i = b.previousElementSibling; const show = i.type === "password";
+    i.type = show ? "text" : "password"; b.textContent = show ? "隐藏" : "显示";
+  }));
+  dlg.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const values = Object.fromEntries(form.fields.map((f) => [f.ref, dlg.querySelector(`[name="${f.ref}"]`).value]));
+    try {
+      await api(`/api/capabilities/${encodeURIComponent(d.key)}/credentials`, { method: "PUT", body: { values } });
+      dlg.close(); toast("已保存，等待健康检查");
+      integrations.loaded = false; refresh();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  });
+  dlg.showModal();
+  const first = dlg.querySelector("input"); if (first) first.focus();
 };
 
 // 表格里的下拉框 / 输入框：改完即保存

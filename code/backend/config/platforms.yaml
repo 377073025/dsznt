@@ -1,9 +1,16 @@
 # 各平台入口、域名白名单、风控关键词与限速（07 号文档 6.3、6.5 节）
 # 入口地址在 POC 阶段确认后填写；脚本里只引用 urls.<key>
 
+# login：专用浏览器登录（Web「接入状态」里打开）。check_url 未登录时会跳到含 logged_out 任一词的地址。
 pdd_backend:
   domains: [mms.pinduoduo.com]
   urls: {}
+  login:
+    title: 拼多多商家后台
+    capability: pdd_web
+    url: https://mms.pinduoduo.com/login/
+    check_url: https://mms.pinduoduo.com/home/
+    logged_out: [/login]
   rate_limit: {min_interval_s: 30, daily_pages: 200}
   window: ["06:00", "08:00"]
 
@@ -16,6 +23,12 @@ pdd_front:
 alibaba:
   domains: [1688.com, s.1688.com, detail.1688.com]
   urls: {}
+  login:
+    title: 1688（采集账号）
+    capability: alibaba_web
+    url: https://login.1688.com/member/signin.htm
+    check_url: https://work.1688.com/
+    logged_out: [login.taobao.com, login.1688.com, /signin]
   rate_limit: {min_interval_s: 60, max_interval_s: 180, daily_pages: 60}
   window: ["08:00", "23:00"]
 

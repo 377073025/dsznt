@@ -32,6 +32,8 @@ def test_backup_snapshot_mirror_and_prune(env, tmp_path):
 
 def test_redaction_and_json_context():
     assert redact("access_token=abc123xyz&x=1") == "access_token=***&x=1"
+    # 飞书长连接地址里的连接凭据
+    assert redact("wss://x/ws/v2?fpid=1&access_key=fe92&ticket=80f6-e1e5") == "wss://x/ws/v2?fpid=1&access_key=***&ticket=***"
     assert redact('{"api_key": "sk-ant-123"}') == '{"api_key": "***"}'
     assert redact("联系 13812345678") == "联系 138****5678"
     assert redact("身份证 110101199001011234") == "身份证 110101********1234"
