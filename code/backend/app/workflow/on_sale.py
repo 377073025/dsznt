@@ -149,7 +149,52 @@ def watch_offers(s: Session, services: Services, day: date) -> list[dict[str, An
     return alerts
 
 
+EXPIRE_WARN_DAYS = 14
+
+
+def check_dropship(s: Session, services: Services, day: date) -> list[str]:
+    """代发助手王每日检查：店铺授权、软件到期、待采购订单、货源下架、在售商品没关联货源 → 当天飞书提醒一次。
+    已关联货源而系统里还没记货源的商品，顺手记上（offer_watch 据此复查价格和库存）。"""
+    from app import capabilities as caps
+
+    if not hasattr(services.dropship, "status") or not caps.is_healthy(s, "dropship_tool"):
+        return []
+    st = services.dropship.status()
+    shop, issues = st["shop"], []
+
+    def soon(d: str) -> int | None:
+        return (date.fromisoformat(d) - day).days if d else None
+
+    if not shop["authorized"]:
+        issues.append("拼多多店铺在代发助手王里的授权已失效，铺货和抓单都会停：请到「我的 → 我的店铺」重新授权")
+    elif (left := soon(shop["auth_expire"])) is not None and left <= EXPIRE_WARN_DAYS:
+        issues.append(f"拼多多店铺授权 {shop['auth_expire']} 到期（还剩 {left} 天）")
+    if (left := soon(st["service_end"])) is not None and left <= EXPIRE_WARN_DAYS:
+        issues.append(f"代发助手王 {st['service_end']} 到期（还剩 {left} 天），到期后不能铺货和采购")
+    if st["orders"] and st["orders"]["wait_purchase"]:
+        issues.append(f"{st['orders']['wait_purchase']} 笔订单待采购：开了自动采购的会自动下单，没关联货源的要手动采购")
+    for g in st["linked"]:
+        if g["source_status"] != "published":
+            issues.append(f"货源已不在售（{g['source_status']}）：{g['title'][:20]}（商品 {g['goods_id']}）")
+    if st["unlinked"]:
+        names = "、".join(x["name"][:16] for x in st["unlinked"][:5])
+        issues.append(f"{len(st['unlinked'])} 个在售商品没关联货源，来了订单不会自动采购：{names}")
+    products = {p.goods_id: p for p in s.scalars(select(Product))}
+    for g in st["linked"]:
+        prod = products.get(g["goods_id"])
+        if prod is not None and not prod.source_offer_id:
+            prod.source_offer_id = g["offer_id"]
+            audit(s, "system", "product.source_from_dropship", f"goods:{prod.goods_id}", {"offer_id": g["offer_id"]})
+    if issues and _alert_once(s, f"dropship_check:{day.isoformat()}"):
+        send_card(s, services, cards.notice("代发助手王 · 每日检查", "\n".join(f"- {x}" for x in issues)), "system", 0)
+    return issues
+
+
 @job_handler("fetch.offer_watch")
 def _offer_watch(ctx: JobContext, p: dict[str, Any]) -> None:
     day = date.fromisoformat(p["day"]) if p.get("day") else (utcnow() + timedelta(hours=8)).date()
+    try:
+        check_dropship(ctx.session, ctx.services, day)
+    except Exception as e:  # noqa: BLE001  代发检查失败不影响货源复查
+        log.warning("代发助手王每日检查失败：%s", e)
     watch_offers(ctx.session, ctx.services, day)

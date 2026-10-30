@@ -1,0 +1,142 @@
+{
+ "success": true,
+ "error_code": 1000000,
+ "error_msg": null,
+ "result": {
+  "total": 133,
+  "list": [
+   {
+    "chance_id": "f58d7d8555f676dd4cbc2d0861d520b8",
+    "keywords": "裤校裤校服裤子小学生",
+    "refer_price": 3800,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-09-12/496af14f-77b9-4b3e-8df2-527e524d9529.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f58687a2cb09822982afe4f971a5d4a2",
+    "keywords": "外套校服裤子服运动",
+    "refer_price": 1530,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2025-10-31/378956e3-c113-4f43-b93b-6c3174e65f5d.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f57b4f6104863cccc8106c38054edc03",
+    "keywords": "校服服运动初中短袖",
+    "refer_price": 1700,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-08-20/3e50549f-d0e9-4f0f-8e26-0890f9851cca.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f5646239e9dd2cebd6c4da29b98d41ba",
+    "keywords": "班服校服园服衣套装",
+    "refer_price": 9800,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/open-gw/2021-09-26/43f5add6a78bafaf9f581b5758f74586.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f5626ec25fbb26afe66eb6fc2ce7cebe",
+    "keywords": "校服外套裤女加绒",
+    "refer_price": 1390,
+    "hot_index": 99,
+    "potential_index": 8415,
+    "pic_url": "https://img.pddpic.com/mms-material-img/2025-08-13/dca4dba0-b89f-4dc9-a9c0-07bfb501502c.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f50766dec606f50581432034e5340740",
+    "keywords": "校服高中夏季秋季正版",
+    "refer_price": 1451,
+    "hot_index": 97,
+    "potential_index": 8245,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-09-14/ff259a98-3c25-4437-86f5-8480328a0809.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f4f16fe1e247a0fbe9b21e173409a6fd",
+    "keywords": "裤子校服校裤裤黑色",
+    "refer_price": 3325,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-material-img/2022-10-10/18bae4d5-75a2-4d7a-8155-3ef1f18f3b16.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f4c42723662dc943366d8e38ed7c46c4",
+    "keywords": "上衣校服校徽纯棉短袖",
+    "refer_price": 6650,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-09-28/aed86115-08af-47d5-b23a-95051c2eb594.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f4b7438002680469374c68f759789136",
+    "keywords": "校服马甲同款小学生秋",
+    "refer_price": 10450,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-10-23/99ff5a70-e445-4ee8-84ea-67202f9301a2.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f4a803cc9fa69d5a39c88f90c0d86262",
+    "keywords": "中学生秋季外套校服服",
+    "refer_price": 2850,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-10-08/95506568-e301-4cb9-964f-694477939597.png.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "f46cdd30c0686fe8cceee451a25da326",
+    "keywords": "班服校服衣冲锋小学生",
+    "refer_price": 3975,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-goods-image/2026-09-22/c6123232-4cab-42f3-856a-7a20cef45e3d.jpeg.a.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   },
+   {
+    "chance_id": "fffeac0c06e23e43ae36a7a25ff7d38c",
+    "keywords": "校服冬装同款小学加绒",
+    "refer_price": 12100,
+    "hot_index": 100,
+    "potential_index": 8500,
+    "pic_url": "https://img.pddpic.com/mms-material-img/2025-10-28/5a1e1ec3-a3e2-4eee-b0a8-ef52319c6751.jpeg",
+    "cat_id_1": 14966,
+    "cat_id_2": 14997,
+    "cat_id_3": 15076
+   }
+  ]
+ }
+}

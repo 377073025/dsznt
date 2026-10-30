@@ -120,8 +120,13 @@ def open_browser(platform: str, user: User = Depends(current_user)) -> dict:
 @app.post("/api/browsers/{platform}/check")
 def check_browser(platform: str, s: Session = Depends(db), user: User = Depends(current_user)) -> dict:
     state = _browser_action(platform, user, profiles.check_login)
-    cap = profiles.login_defs()[platform].capability
-    if cap in get_services().health_checks():  # 已有读取实现的平台：登录状态就是通道状态
+    services = get_services()
+    cap_keys = [profiles.login_defs()[platform].capability]
+    # 借用这个浏览器的能力一起更新（例如机会商品用拼多多后台、代发助手王用 1688）
+    cap_keys += [k for k, impl in services.browser_caps().items() if impl.platform == platform]
+    for cap in dict.fromkeys(cap_keys):
+        if cap not in services.health_checks():  # 已有读取实现的平台：登录状态就是通道状态
+            continue
         if state["logged_in"]:
             caps.set_status(s, cap, caps.HEALTHY, "专用浏览器已登录")
         elif s.get(Capability, cap).status != caps.NOT_CONFIGURED:

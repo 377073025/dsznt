@@ -32,6 +32,27 @@ alibaba:
   rate_limit: {min_interval_s: 60, max_interval_s: 180, daily_pages: 60}
   window: ["08:00", "23:00"]
 
+# 铺货代发工具（R09）：代发助手王，是 1688 服务市场里的应用，用 1688 专用浏览器（同一个账号）打开；每天读一次状态
+daifa:
+  domains: [ufuwu.1688.com, page.1688.com, air.1688.com]
+  urls: {}
+  rate_limit: {min_interval_s: 30, max_interval_s: 90, daily_pages: 20}
+  window: ["08:00", "23:00"]
+
+# 市场数据工具（R10）：电霸拼多多版，没有开放接口，读网页；每周选品时低频读取
+dianba:
+  domains: [pdd.dianba6.com]
+  urls: {}
+  login:
+    title: 电霸（市场数据）
+    capability: market_tool
+    url: https://pdd.dianba6.com/login
+    check_url: https://pdd.dianba6.com/
+    logged_out: [/login]
+  rate_limit: {min_interval_s: 30, max_interval_s: 90, daily_pages: 80}
+  max_data_age_days: 14   # 热词、热销数据比这更旧就不用（试用账号的热词是历史样本）
+  window: ["08:00", "23:00"]
+
 # 页面文本或 URL 出现这些词 → 风控
 risk_keywords:
   captcha: [验证码, 滑块, 拖动滑块, 安全验证, 人机验证]

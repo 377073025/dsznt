@@ -42,7 +42,18 @@ class Services:
             from app.data.channels.web_reader import profiles
 
             checks["alibaba_web"] = lambda: profiles.require_logged_in("alibaba")
+        for key, impl in self.browser_caps().items():
+            from app.data.channels.web_reader import profiles
+
+            checks[key] = lambda p=impl.platform: profiles.require_logged_in(p)
         return checks
+
+    def browser_caps(self) -> dict[str, Any]:
+        """借用别的平台专用浏览器的能力 → 实现（例如机会商品用拼多多后台、代发助手王用 1688），登录状态就是能力状态。"""
+        if self.mode != "real":
+            return {}
+        return {k: v for k, v in (("market_tool", self.market), ("dropship_tool", self.dropship))
+                if getattr(v, "platform", None)}
 
 
 def build_services(settings: Settings | None = None) -> Services:
@@ -86,10 +97,17 @@ def build_services(settings: Settings | None = None) -> Services:
         assets = settings.path("assets_dir")
         image_gen = SeedreamImageGen(gen_key, gen_conf["model"], out_dir=assets / "generated", base_url=gen_conf["base_url"],
                                      size=gen_conf.get("size", "2K"), assets_dir=assets)
-    # 1688 走专用浏览器读网页；拼多多后台数据以人工导出为主（自动读取会触发平台验证）
+    # 1688、市场数据、代发助手王走专用浏览器读网页；拼多多后台经营数据以人工导出为主（自动读取会触发平台验证）
+    # 市场数据（R10）：market.provider 选 pdd_chance（商家后台机会商品，免费）或 dianba（电霸，付费）
     from app.adapters.alibaba1688.web import Alibaba1688Web
+    from app.adapters.dropship_tool.daifa_web import DaifaWeb
 
-    return Services(mode="real", llm=llm, feishu=feishu, sourcing={"web": Alibaba1688Web()}, image_gen=image_gen)
+    if (settings.raw.get("market") or {}).get("provider", "pdd_chance") == "dianba":
+        from app.adapters.market_tool.dianba_web import DianbaWeb as Market
+    else:
+        from app.adapters.market_tool.pdd_chance_web import PddChanceWeb as Market
+    return Services(mode="real", llm=llm, feishu=feishu, sourcing={"web": Alibaba1688Web()}, market=Market(),
+                    dropship=DaifaWeb(), image_gen=image_gen)
 
 
 _services: Services | None = None

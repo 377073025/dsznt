@@ -1,0 +1,717 @@
+{
+ "url": "https://ufuwu.1688.com/page/fuwu_work_isv_container.htm",
+ "service": {
+  "code": "200",
+  "gmtServiceEnd": "2026-12-02 23:59:59",
+  "request_id": "202610301923203030845D21B1B"
+ },
+ "shops": {
+  "code": 200,
+  "message": "success",
+  "result": [
+   {
+    "id": "5323625",
+    "shop_type": "pdd",
+    "pic_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogoNew.png",
+    "authorization_status": "1",
+    "update_time": "2026-09-09 20:45:52",
+    "sequence": "0",
+    "shop_name": "精选品质校服",
+    "create_time": "2026-09-02 16:18:46",
+    "user_nick": "pdd48817108693",
+    "user_id": "488171086",
+    "is_delete": "0",
+    "remark": "",
+    "has_smallroutine": "0",
+    "shop_care_num": "0",
+    "ay_userid": null,
+    "is_select": "1",
+    "vip_flag": "1",
+    "expire_time": "2026-12-10 08:45:35",
+    "notes": null
+   },
+   {
+    "id": "5339843",
+    "shop_type": "dy",
+    "pic_url": "https://q.aiyongtech.com/1688/web/img/preview/dyLogoNew.png",
+    "authorization_status": "0",
+    "update_time": "2026-09-05 16:51:19",
+    "sequence": "2",
+    "shop_name": "精选品质校服",
+    "create_time": "2026-09-05 14:58:21",
+    "user_nick": "",
+    "user_id": "305261307",
+    "is_delete": "0",
+    "remark": "",
+    "has_smallroutine": "0",
+    "shop_care_num": "0",
+    "ay_userid": null,
+    "is_select": null,
+    "vip_flag": "2",
+    "expire_time": "2026-10-05 16:18:38",
+    "notes": null
+   }
+  ],
+  "count": "2",
+  "request_id": "20261030192320929887A0D87F7"
+ },
+ "orders": [
+  [
+   "isDistribute=&XProductName=webdistributenew1688",
+   {
+    "waittobuy": 44,
+    "waittosend": 0,
+    "sellersended": 23,
+    "buyerrefunded": 3,
+    "buyerclosed": 327,
+    "success": 339
+   }
+  ],
+  [
+   "shopId=5323625&isDistribute=&XProductName=webdistributenew1688",
+   {
+    "waittobuy": 44,
+    "waittosend": 0,
+    "sellersended": 23,
+    "buyerrefunded": 3,
+    "buyerclosed": 301,
+    "success": 310,
+    "spnumber": "6",
+    "notspnum": "0",
+    "cancelnum": "0"
+   }
+  ],
+  [
+   "shopId=5339843&isDistribute=&XProductName=webdistributenew1688",
+   {
+    "waittobuy": 0,
+    "waittosend": 0,
+    "sellersended": 0,
+    "buyerrefunded": 0,
+    "buyerclosed": 26,
+    "success": 29,
+    "spnumber": "1",
+    "notspnum": "0",
+    "cancelnum": "0"
+   }
+  ]
+ ],
+ "linked": {
+  "result": [
+   {
+    "id": "446341535",
+    "num_iid": "1012228825085",
+    "origin_num_iid": "901470516429",
+    "status_1688": "published",
+    "origin_login_name": "义乌市和融服饰有限公司",
+    "origin_id": "",
+    "origin_title": "儿童泳衣男孩新款分体游泳衣男女童大童防晒专业训练泳裤套装批发",
+    "createtime": "2026-10-03 12:06:22",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "155956",
+    "amount": "155956",
+    "relation_is_cancel": "0",
+    "origin_price": "19.5",
+    "cid_1688": "122110001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01UOFUPt1t9TakHErhv_!!2215496295859-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "3106",
+    "cid": "12348",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "fast",
+    "title": "儿童泳衣男孩新款分体游泳衣男女童大童防晒专业训练泳裤套装批发",
+    "max_list_price": "19.5",
+    "min_list_price": "19.5",
+    "min_defect_num": "155956",
+    "is_pdd_draft": false
+   },
+   {
+    "id": "440718373",
+    "num_iid": "1006095096720",
+    "origin_num_iid": "1073935745182",
+    "status_1688": "published",
+    "origin_login_name": "深圳市维印服装厂",
+    "origin_id": "",
+    "origin_title": "东莞统一校服中学小学生夏季短袖短裤薄款夏长裤索罗娜运动服套装",
+    "createtime": "2026-09-17 16:04:11",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "79930",
+    "amount": "63940",
+    "relation_is_cancel": "0",
+    "origin_price": "27",
+    "cid_1688": "122088001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01DdZK5EkPWdG1chua_!!3171345984-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "12124",
+    "cid": "15076",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "fast",
+    "title": "东莞统一校服中学小学生夏季短袖短裤薄款夏长裤索罗娜运动服套装",
+    "max_list_price": "27",
+    "min_list_price": "27",
+    "min_defect_num": "79930",
+    "is_pdd_draft": false
+   },
+   {
+    "id": "435811402",
+    "num_iid": "999796992215",
+    "origin_num_iid": "1071561071978",
+    "status_1688": "published",
+    "origin_login_name": "东莞市英例服饰",
+    "origin_id": "",
+    "origin_title": "老校友东莞统一新校服中学小学生夏季短袖短长裤索罗娜运动服套装",
+    "createtime": "2026-09-05 13:27:56",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "1599979",
+    "amount": "1599979",
+    "relation_is_cancel": "0",
+    "origin_price": "28",
+    "cid_1688": "122088001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01bnPucbodweD1chua_!!2222894876912-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "10936",
+    "cid": "15076",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "fast",
+    "title": "老校友东莞统一新校服中学小学生夏季短袖短长裤索罗娜运动服套装",
+    "max_list_price": "28",
+    "min_list_price": "28",
+    "min_defect_num": "1599979",
+    "is_pdd_draft": false
+   },
+   {
+    "id": "435160009",
+    "num_iid": "998840686004",
+    "origin_num_iid": "1071561071978",
+    "status_1688": "published",
+    "origin_login_name": "东莞市英例服饰",
+    "origin_id": "",
+    "origin_title": "老校友东莞统一新校服中学小学生夏季短袖短长裤索罗娜运动服套装",
+    "createtime": "2026-09-03 18:56:13",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "91900",
+    "amount": "91900",
+    "relation_is_cancel": "0",
+    "origin_price": "28",
+    "cid_1688": "122088001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01bnPucbodweD1chua_!!2222894876912-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "8128",
+    "cid": "15076",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "fast",
+    "title": "老校友东莞统一新校服中学小学生夏季短袖短长裤索罗娜运动服套装",
+    "max_list_price": "28",
+    "min_list_price": "28",
+    "min_defect_num": "91900",
+    "is_pdd_draft": false
+   },
+   {
+    "id": "435083708",
+    "num_iid": "998750484576",
+    "origin_num_iid": "1071561071978",
+    "status_1688": "published",
+    "origin_login_name": "东莞市英例服饰",
+    "origin_id": "",
+    "origin_title": "老校友东莞统一新校服中学小学生夏季短袖短长裤索罗娜运动服套装",
+    "createtime": "2026-09-03 15:34:15",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "91359",
+    "amount": "79964",
+    "relation_is_cancel": "0",
+    "origin_price": "28",
+    "cid_1688": "122088001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01bnPucbodweD1chua_!!2222894876912-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "12124",
+    "cid": "15076",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "1688",
+    "title": "东莞统一校服中学小学生夏季短袖短裤薄款夏长裤索罗娜运动服套装",
+    "max_list_price": "28",
+    "min_list_price": "28",
+    "min_defect_num": "91359",
+    "is_pdd_draft": false
+   },
+   {
+    "id": "434710058",
+    "num_iid": "998189174341",
+    "origin_num_iid": "816385555429",
+    "status_1688": "published",
+    "origin_login_name": "艾仑仕科技",
+    "origin_id": "",
+    "origin_title": "深圳校服小学生批发男女夏季短袖长裤子T恤上衣速干夏装冰丝特版",
+    "createtime": "2026-09-02 16:26:45",
+    "is_del": "0",
+    "shop_name": "精选品质校服",
+    "shop_type": "pdd",
+    "shop_url": "https://q.aiyongtech.com/1688/web/img/preview/pingDDLogo.png",
+    "shop_id": "5323625",
+    "amount_1688": "164915",
+    "amount": "11848",
+    "relation_is_cancel": "0",
+    "origin_price": "16",
+    "cid_1688": "122088001",
+    "pic_1688": "https://cbu01.alicdn.com/img/ibank/O1CN01ZOQd121RHtYsxcsMx_!!1723242087-0-cib.jpg",
+    "cargo_number_1688": "",
+    "price": "4672",
+    "cid": "15076",
+    "pic_url": "",
+    "outer_id": "",
+    "way_type": "fast",
+    "title": "深圳校服小学生批发男女夏季短袖长裤子T恤上衣速干夏装冰丝特版",
+    "max_list_price": "16",
+    "min_list_price": "16",
+    "min_defect_num": "164915",
+    "is_pdd_draft": false
+   }
+  ],
+  "totalRecords": "6"
+ },
+ "items": {
+  "code": 200,
+  "message": "success",
+  "result": [
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-27/973c23d3-f7be-49ac-8584-938ffd96b443.png.a.jpeg",
+    "name": "(送校徽)汕头金平小学生秋冬校服外套冬裤南韩棉亲肤校园日常保暖",
+    "productid": "1021707984764",
+    "productID": "1021707984764",
+    "price": 241,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 900,
+    "skuInfos": [
+     {
+      "amountOnSale": 100,
+      "price": 240,
+      "skuId": "1987293192184",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "套装(备注送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "110",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 100,
+      "price": 240,
+      "skuId": "1987293192185",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "套装(备注送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "120",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://omsproductionimg.yangkeduo.com/images/2018-01-14/cabf35fe7eb657d1982b93f5e000c50e.png",
+    "name": "【购买前须联系客服确认】补收差价专用商品",
+    "productid": "1003067446068",
+    "productID": "1003067446068",
+    "price": 0.01,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 2147483647,
+    "skuInfos": [
+     {
+      "amountOnSale": 2147483647,
+      "price": 0.01,
+      "skuId": "1962969544834",
+      "attributes": []
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://omsproductionimg.yangkeduo.com/images/2018-01-14/cabf35fe7eb657d1982b93f5e000c50e.png",
+    "name": "【购买前须联系客服确认】补收差价专用商品",
+    "productid": "1003130536331",
+    "productID": "1003130536331",
+    "price": 0.01,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 2147483647,
+    "skuInfos": [
+     {
+      "amountOnSale": 2147483647,
+      "price": 0.01,
+      "skuId": "1963024770706",
+      "attributes": []
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-09-14/a1f71534-62a4-43b0-b5c7-3ccbf9987003.png",
+    "name": "潮州潮安小学生秋冬装统一新校服(2026款)外套长裤套装开学",
+    "productid": "1003264449188",
+    "productID": "1003264449188",
+    "price": 130.9,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 299990,
+    "skuInfos": [
+     {
+      "amountOnSale": 10000,
+      "price": 83.9,
+      "skuId": "1963174752691",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬上衣(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "110",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 9999,
+      "price": 83.9,
+      "skuId": "1963174752692",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬上衣(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "120",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-21/12853369-eee3-4760-831f-3a9360163b02.png.a.jpeg",
+    "name": "汕头市金平区小学生夏装统一新校服(2026款)奥代尔面料",
+    "productid": "1006617893310",
+    "productID": "1006617893310",
+    "price": 130.9,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 3828,
+    "skuInfos": [
+     {
+      "amountOnSale": 100,
+      "price": 71.8,
+      "skuId": "1966943241584",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "短袖(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "110",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 0,
+      "price": 71.8,
+      "skuId": "1966943241585",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "短袖(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "120",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-21/ee6e6f14-fc29-418e-bcba-ed9652a512ad.png.a.jpeg",
+    "name": "汕头市金平区小学生夏装统一款校服2026款奥代尔面料短袖长裤短裤",
+    "productid": "1009617141513",
+    "productID": "1009617141513",
+    "price": 130.9,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 3811,
+    "skuInfos": [
+     {
+      "amountOnSale": 100,
+      "price": 76.8,
+      "skuId": "1970452312421",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "短袖(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "110",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 0,
+      "price": 76.8,
+      "skuId": "1970452312422",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "短袖(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "120",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-20/915f71ec-4c4f-48a9-b334-62531d8e0868.png.a.jpeg",
+    "name": "汕头市金平区小学生秋冬装统一款校服2026款南韩棉面料外套冬裤",
+    "productid": "1018363902107",
+    "productID": "1018363902107",
+    "price": 151.8,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 1453,
+    "skuInfos": [
+     {
+      "amountOnSale": 9,
+      "price": 140,
+      "skuId": "1982703755112",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬季整套(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "110",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 48,
+      "price": 140,
+      "skuId": "1982703755113",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬季整套(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "120",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-26/4f38d52f-d3e4-422a-925c-359c7344517c.png.a.jpeg",
+    "name": "汕头市金平区初中高中生秋冬统一款校服2026款南韩棉面料外套秋裤",
+    "productid": "1018392793023",
+    "productID": "1018392793023",
+    "price": 151,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 1194,
+    "skuInfos": [
+     {
+      "amountOnSale": 50,
+      "price": 99,
+      "skuId": "1982727391014",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬上衣(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "150",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 50,
+      "price": 99,
+      "skuId": "1982727391015",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "秋冬上衣(备注学校送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "155",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   },
+   {
+    "pic": "https://img.pddpic.com/mms-goods-image/2026-10-27/5e9666e0-1094-40a8-a375-af83e0208233.png.a.jpeg",
+    "name": "送校徽汕头金平初高中秋冬校服套装南韩棉加厚亲肤款校园保暖套装",
+    "productid": "1021670119354",
+    "productID": "1021670119354",
+    "price": 261,
+    "isProductStateInited": "",
+    "matchSpecsStatus": 0,
+    "association_item_infos": null,
+    "distribute_association_item": null,
+    "quantity": 400,
+    "skuInfos": [
+     {
+      "amountOnSale": 50,
+      "price": 260,
+      "skuId": "1987239654850",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "套装(备注送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "150",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     },
+     {
+      "amountOnSale": 50,
+      "price": 260,
+      "skuId": "1987239654851",
+      "attributes": [
+       {
+        "attributeID": "",
+        "attributeValue": "套装(备注送校徽)",
+        "valueId": "",
+        "attributeDisplayName": "颜色分类"
+       },
+       {
+        "attributeID": "",
+        "attributeValue": "155",
+        "valueId": "",
+        "attributeDisplayName": "参考分类"
+       }
+      ]
+     }
+    ],
+    "soldQuantity": null
+   }
+  ],
+  "totalRecords": 9,
+  "request_id": "202610301923543911187BF821E"
+ }
+}

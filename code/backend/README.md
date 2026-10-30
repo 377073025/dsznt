@@ -7,7 +7,7 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -e .[dev]
-.venv\Scripts\python -m pytest -q          # 145 个测试（需要 Python ≥ 3.11）
+.venv\Scripts\python -m pytest -q          # 163 个测试（需要 Python ≥ 3.11）
 .venv\Scripts\python scripts\demo_run.py   # 演示：海盐换图闭环 + 周选品 + 上新，打印飞书卡片
 ```
 

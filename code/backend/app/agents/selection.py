@@ -75,13 +75,13 @@ MIN_TREND = 0.1
 
 
 def find_demands(s: Session, services: Services, week: str, category: str, keyword: str = "") -> list[DemandDraft]:
-    """能力「选品 · 需求侦察」（只读）：热词趋势上升的词作为需求；给了 keyword 时只看包含它的词、不卡趋势门槛。"""
+    """能力「选品 · 需求侦察」（只读）：热词趋势上升或平台标记缺货的词作为需求；给了 keyword 时只看包含它的词、不卡趋势门槛。"""
     if services.market is None or not caps.is_healthy(s, "market_tool"):
         return []
     ranking = services.market.category_ranking(category, week)
     out = []
     for kw in services.market.hot_keywords(category, week):
-        if (keyword and keyword not in kw.keyword) or (not keyword and kw.trend <= MIN_TREND):
+        if (keyword and keyword not in kw.keyword) or (not keyword and kw.trend <= MIN_TREND and not kw.shortage):
             continue
         matched = [r for r in ranking if kw.keyword in r.title] or ranking[:1]
         out.append(DemandDraft(keyword=kw.keyword, heat=kw.heat, trend=kw.trend, competition=kw.competition,

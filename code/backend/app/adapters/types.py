@@ -47,6 +47,7 @@ class KeywordStat(BaseModel):
     heat: float
     trend: float  # 近 4 周变化率
     competition: float  # 0–1，越大越激烈
+    shortage: bool = False  # 平台标记的「搜得多、商品少」，不看趋势也算需求
 
 
 class RankItem(BaseModel):

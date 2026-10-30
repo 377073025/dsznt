@@ -1,0 +1,249 @@
+{
+ "success": true,
+ "error_code": 1000000,
+ "error_msg": null,
+ "result": [
+  {
+   "params_key": "labels",
+   "option_info_list": [
+    {
+     "option_key": "newinfashion_new",
+     "title": "当季新品"
+    },
+    {
+     "option_key": "hot_follow",
+     "title": "热门跟款"
+    },
+    {
+     "option_key": "wide_popular",
+     "title": "全网热销"
+    },
+    {
+     "option_key": "home_page_new",
+     "title": "首页流量"
+    },
+    {
+     "option_key": "thousand_rec",
+     "title": "潜力商品"
+    },
+    {
+     "option_key": "hot_favorites_goods",
+     "title": "热门收藏"
+    }
+   ]
+  },
+  {
+   "params_key": "mall_chance_words",
+   "option_info_list": [
+    {
+     "option_key": "外套 女 秋 冬款",
+     "title": "外套 女 秋 冬款"
+    },
+    {
+     "option_key": "9.9外套男 秋冬款",
+     "title": "9.9外套男 秋冬款"
+    },
+    {
+     "option_key": " 三星",
+     "title": " 三星"
+    },
+    {
+     "option_key": ".羊羔绒马甲",
+     "title": ".羊羔绒马甲"
+    },
+    {
+     "option_key": "女羊羔绒马甲",
+     "title": "女羊羔绒马甲"
+    },
+    {
+     "option_key": " 双十一",
+     "title": " 双十一"
+    },
+    {
+     "option_key": " 莆田",
+     "title": " 莆田"
+    },
+    {
+     "option_key": "9.9班服",
+     "title": "9.9班服"
+    },
+    {
+     "option_key": " 体操服",
+     "title": " 体操服"
+    },
+    {
+     "option_key": " 羊",
+     "title": " 羊"
+    },
+    {
+     "option_key": " 牡丹",
+     "title": " 牡丹"
+    },
+    {
+     "option_key": " 羊羔绒",
+     "title": " 羊羔绒"
+    },
+    {
+     "option_key": "外套 薄绒",
+     "title": "外套 薄绒"
+    },
+    {
+     "option_key": "套装 英伦风",
+     "title": "套装 英伦风"
+    },
+    {
+     "option_key": "外套女薄绒",
+     "title": "外套女薄绒"
+    },
+    {
+     "option_key": "服省",
+     "title": "服省"
+    },
+    {
+     "option_key": "沧州市校服统一",
+     "title": "沧州市校服统一"
+    },
+    {
+     "option_key": "   l",
+     "title": "   l"
+    },
+    {
+     "option_key": "冬季礼服",
+     "title": "冬季礼服"
+    },
+    {
+     "option_key": " 六一",
+     "title": " 六一"
+    },
+    {
+     "option_key": "校徽",
+     "title": "校徽"
+    },
+    {
+     "option_key": "/工厂",
+     "title": "/工厂"
+    },
+    {
+     "option_key": " 图片",
+     "title": " 图片"
+    },
+    {
+     "option_key": "針孔",
+     "title": "針孔"
+    },
+    {
+     "option_key": "服装 运动会",
+     "title": "服装 运动会"
+    },
+    {
+     "option_key": "北海市校服统一",
+     "title": "北海市校服统一"
+    },
+    {
+     "option_key": " 广州",
+     "title": " 广州"
+    },
+    {
+     "option_key": "套装摇粒绒",
+     "title": "套装摇粒绒"
+    },
+    {
+     "option_key": "《客服》",
+     "title": "《客服》"
+    },
+    {
+     "option_key": "加絨西褲",
+     "title": "加絨西褲"
+    },
+    {
+     "option_key": "清貨",
+     "title": "清貨"
+    },
+    {
+     "option_key": ".棒球",
+     "title": ".棒球"
+    },
+    {
+     "option_key": "外套 秋衣",
+     "title": "外套 秋衣"
+    },
+    {
+     "option_key": "青色",
+     "title": "青色"
+    },
+    {
+     "option_key": "海军",
+     "title": "海军"
+    },
+    {
+     "option_key": "阳江市统一校服",
+     "title": "阳江市统一校服"
+    },
+    {
+     "option_key": "半截 裤",
+     "title": "半截 裤"
+    },
+    {
+     "option_key": "海军服",
+     "title": "海军服"
+    },
+    {
+     "option_key": "套装风衣",
+     "title": "套装风衣"
+    },
+    {
+     "option_key": " 鹿",
+     "title": " 鹿"
+    },
+    {
+     "option_key": "中山市校服统一2026",
+     "title": "中山市校服统一2026"
+    },
+    {
+     "option_key": "冲锋衣枣红色校服",
+     "title": "冲锋衣枣红色校服"
+    },
+    {
+     "option_key": "惠来县校服统一冬季",
+     "title": "惠来县校服统一冬季"
+    },
+    {
+     "option_key": " 酷",
+     "title": " 酷"
+    },
+    {
+     "option_key": "校服汕尾统一",
+     "title": "校服汕尾统一"
+    },
+    {
+     "option_key": "校服 绿色",
+     "title": "校服 绿色"
+    },
+    {
+     "option_key": "/博士",
+     "title": "/博士"
+    },
+    {
+     "option_key": " 安全",
+     "title": " 安全"
+    },
+    {
+     "option_key": "盘锦市冬季统一校服",
+     "title": "盘锦市冬季统一校服"
+    },
+    {
+     "option_key": "#01",
+     "title": "#01"
+    },
+    {
+     "option_key": "中乔",
+     "title": "中乔"
+    },
+    {
+     "option_key": ".活力",
+     "title": ".活力"
+    }
+   ]
+  }
+ ]
+}

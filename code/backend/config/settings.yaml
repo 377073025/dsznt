@@ -36,6 +36,11 @@ llm:
 # 改回 Anthropic：
 # llm: {provider: anthropic, key_ref: anthropic_api_key, base_url: null, structured_output: true, batch: true}
 
+# 市场数据（R10）：pdd_chance = 拼多多商家后台「机会商品」（免费，用拼多多后台专用浏览器，只有本店主营类目）；
+# dianba = 电霸（付费，用电霸专用浏览器）。改完重启
+market:
+  provider: pdd_chance
+
 # 生图服务（R11）：火山方舟 Seedream。key_ref 是「接入状态 → 生图服务 → 录入凭证」填的凭证名称；
 # 现在用 Agent Plan 个人版套餐（专属 Key + /api/plan/v3，模型 doubao-seedream-5-0-pro / doubao-seedream-5.0-flash）；
 # 改按量付费：base_url 换成 /api/v3，model 填「开通管理」里已开通的模型 ID。生成的图存到 assets_dir/generated
